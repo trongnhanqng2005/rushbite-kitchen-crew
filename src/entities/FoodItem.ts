@@ -1,0 +1,195 @@
+/**
+ * Food item entity with 3D procedural representation and state tracking.
+ * Reuses geometries and materials to avoid garbage collection allocations.
+ */
+
+import * as THREE from 'three';
+import { FoodItemType, FoodItemState, INGREDIENT_DEFINITIONS } from '../data/ingredients.ts';
+import { GameConfig } from '../game/GameConfig.ts';
+
+// Shared geometry caches across all food items to optimize draw calls & memory
+const cylinderGeometries = new Map<string, THREE.CylinderGeometry>();
+const boxGeometries = new Map<string, THREE.BoxGeometry>();
+
+function getSharedCylinder(radius: number, height: number): THREE.CylinderGeometry {
+  const key = `${radius.toFixed(2)}_${height.toFixed(2)}`;
+  if (!cylinderGeometries.has(key)) {
+    cylinderGeometries.set(key, new THREE.CylinderGeometry(radius, radius, height, 16));
+  }
+  return cylinderGeometries.get(key)!;
+}
+
+function getSharedBox(w: number, h: number, d: number): THREE.BoxGeometry {
+  const key = `${w.toFixed(2)}_${h.toFixed(2)}_${d.toFixed(2)}`;
+  if (!boxGeometries.has(key)) {
+    boxGeometries.set(key, new THREE.BoxGeometry(w, h, d));
+  }
+  return boxGeometries.get(key)!;
+}
+
+function getSharedTaperedCylinder(topRadius: number, botRadius: number, height: number): THREE.CylinderGeometry {
+  const key = `${topRadius.toFixed(2)}_${botRadius.toFixed(2)}_${height.toFixed(2)}`;
+  if (!cylinderGeometries.has(key)) {
+    cylinderGeometries.set(key, new THREE.CylinderGeometry(topRadius, botRadius, height, 16));
+  }
+  return cylinderGeometries.get(key)!;
+}
+
+export class FoodItem {
+  public id: string;
+  public type: FoodItemType;
+  public state: FoodItemState;
+  public cookProgress: number = 0; // 0.0 to 1.5
+  public burnProgress: number = 0;
+  public stackedIngredients: FoodItemType[] = [];
+
+  public mesh: THREE.Group;
+  private primaryMaterial?: THREE.MeshStandardMaterial;
+
+  constructor(type: FoodItemType, stacked?: FoodItemType[]) {
+    this.id = 'food_' + Math.random().toString(36).substring(2, 9);
+    this.type = type;
+    this.state = type === 'cooked_patty' ? 'COOKED' : type === 'assembled_burger' ? 'ASSEMBLED' : 'RAW';
+    if (stacked) {
+      this.stackedIngredients = [...stacked];
+    }
+
+    this.mesh = new THREE.Group();
+    this.mesh.name = `FoodItem_${this.id}`;
+    this.rebuildMesh();
+  }
+
+  public advanceCooking(deltaProgress: number): void {
+    if (this.type !== 'raw_patty' && this.type !== 'cooked_patty') return;
+
+    this.cookProgress += deltaProgress;
+
+    if (this.cookProgress >= GameConfig.cooking.burntThreshold) {
+      this.state = 'BURNT';
+      this.type = 'burnt_patty';
+    } else if (this.cookProgress >= GameConfig.cooking.cookedMinProgress) {
+      this.state = 'COOKED';
+      this.type = 'cooked_patty';
+    } else {
+      this.state = 'COOKING';
+    }
+
+    this.updatePattyVisuals();
+  }
+
+  private updatePattyVisuals(): void {
+    if (!this.primaryMaterial) return;
+
+    // Smooth visual transition from raw red -> cooked savory brown -> charred black
+    const rawCol = new THREE.Color(INGREDIENT_DEFINITIONS.raw_patty.color);
+    const cookedCol = new THREE.Color(INGREDIENT_DEFINITIONS.cooked_patty.color);
+    const burntCol = new THREE.Color(INGREDIENT_DEFINITIONS.burnt_patty.color);
+
+    if (this.cookProgress < GameConfig.cooking.cookedMinProgress) {
+      const t = this.cookProgress / GameConfig.cooking.cookedMinProgress;
+      this.primaryMaterial.color.copy(rawCol).lerp(cookedCol, t);
+      this.primaryMaterial.roughness = 0.6 + t * 0.2;
+    } else if (this.cookProgress <= GameConfig.cooking.burntThreshold) {
+      const t = (this.cookProgress - GameConfig.cooking.cookedMinProgress) / (GameConfig.cooking.burntThreshold - GameConfig.cooking.cookedMinProgress);
+      this.primaryMaterial.color.copy(cookedCol).lerp(burntCol, t);
+      this.primaryMaterial.roughness = 0.8 + t * 0.2;
+    } else {
+      this.primaryMaterial.color.copy(burntCol);
+      this.primaryMaterial.roughness = 1.0;
+    }
+  }
+
+  public rebuildMesh(): void {
+    // Clean old children
+    while (this.mesh.children.length > 0) {
+      const child = this.mesh.children[0];
+      this.mesh.remove(child);
+    }
+
+    if (this.type === 'assembled_burger') {
+      this.buildBurgerStackMesh();
+      return;
+    }
+
+    const def = INGREDIENT_DEFINITIONS[this.type];
+    let geom: THREE.BufferGeometry;
+
+    if (this.type === 'cheese') {
+      geom = getSharedBox(0.38, def.height, 0.38);
+    } else if (this.type === 'bun_top') {
+      geom = getSharedTaperedCylinder(def.radius * 0.85, def.radius, def.height);
+    } else {
+      geom = getSharedCylinder(def.radius, def.height);
+    }
+
+    this.primaryMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(def.color),
+      roughness: 0.7,
+      metalness: 0.05,
+    });
+
+    const mesh = new THREE.Mesh(geom, this.primaryMaterial);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = def.height / 2;
+    this.mesh.add(mesh);
+
+    // If already cooked or burnt upon creation
+    if (this.type === 'raw_patty' || this.type === 'cooked_patty' || this.type === 'burnt_patty') {
+      this.updatePattyVisuals();
+    }
+  }
+
+  private buildBurgerStackMesh(): void {
+    let currentY = 0;
+
+    // Small stylized serving plate beneath the burger
+    const plateGeom = getSharedCylinder(0.32, 0.02);
+    const plateMat = new THREE.MeshStandardMaterial({ color: '#E8E8E8', roughness: 0.3 });
+    const plateMesh = new THREE.Mesh(plateGeom, plateMat);
+    plateMesh.position.y = 0.01;
+    plateMesh.receiveShadow = true;
+    this.mesh.add(plateMesh);
+    currentY += 0.02;
+
+    this.stackedIngredients.forEach((ingType) => {
+      const def = INGREDIENT_DEFINITIONS[ingType];
+      let geom: THREE.BufferGeometry;
+
+      if (ingType === 'cheese') {
+        geom = getSharedBox(0.36, def.height, 0.36);
+      } else if (ingType === 'bun_top') {
+        geom = getSharedTaperedCylinder(def.radius * 0.82, def.radius, def.height);
+      } else {
+        geom = getSharedCylinder(def.radius, def.height);
+      }
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(def.color),
+        roughness: 0.6,
+      });
+
+      const layerMesh = new THREE.Mesh(geom, mat);
+      layerMesh.castShadow = true;
+      layerMesh.receiveShadow = true;
+      layerMesh.position.y = currentY + def.height / 2;
+      this.mesh.add(layerMesh);
+
+      currentY += def.height;
+    });
+  }
+
+  public dispose(): void {
+    while (this.mesh.children.length > 0) {
+      const child = this.mesh.children[0] as THREE.Mesh;
+      this.mesh.remove(child);
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m) => m.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    }
+  }
+}

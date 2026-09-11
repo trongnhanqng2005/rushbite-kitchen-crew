@@ -1,0 +1,6 @@
+{
+  "name": "RushBite: Kitchen Crew",
+  "description": "An original fast-paced 3D first-person fast-food restaurant simulation game.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
