@@ -7,6 +7,8 @@
 import * as THREE from 'three';
 import { CollisionWorld } from './CollisionWorld.ts';
 import { GrillStation } from '../stations/GrillStation.ts';
+import { FryerStation } from '../stations/FryerStation.ts';
+import { DrinkStation } from '../stations/DrinkStation.ts';
 import { AssemblyStation } from '../stations/AssemblyStation.ts';
 import { CashRegisterStation } from '../stations/CashRegisterStation.ts';
 import { disposeObject3D } from '../utils/disposeThree.ts';
@@ -18,6 +20,8 @@ export class RestaurantWorld {
   public collisionWorld: CollisionWorld;
 
   public grillStation!: GrillStation;
+  public fryerStation!: FryerStation;
+  public drinkStation!: DrinkStation;
   public assemblyStation!: AssemblyStation;
   public cashRegisterStation!: CashRegisterStation;
   public trashStation!: TrashStation;
@@ -220,25 +224,31 @@ export class RestaurantWorld {
 
   private setupStations(): void {
     // 1. Grill Station (Back kitchen wall left)
-    const grillPos = new THREE.Vector3(-2.8, 0, -7.5);
+    const grillPos = new THREE.Vector3(-3.2, 0, -7.5);
     this.grillStation = new GrillStation(grillPos);
     this.scene.add(this.grillStation.mesh);
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(grillPos.x, 0.45, grillPos.z), new THREE.Vector3(1.3, 0.9, 1.0), 'GrillStation');
 
-    // 2. Assembly Station (Back kitchen wall center)
-    const assemblyPos = new THREE.Vector3(0.5, 0, -7.5);
+    // 2. Assembly Station (Back kitchen wall center-left)
+    const assemblyPos = new THREE.Vector3(-0.8, 0, -7.5);
     this.assemblyStation = new AssemblyStation(assemblyPos);
     this.scene.add(this.assemblyStation.mesh);
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(assemblyPos.x, 0.45, assemblyPos.z), new THREE.Vector3(1.4, 0.9, 1.0), 'AssemblyStation');
 
-    // 3. Trash Can (Back kitchen wall right)
-    const trashPos = new THREE.Vector3(3.6, 0, -7.5);
+    // 3. Fryer Station (Back kitchen wall center-right)
+    const fryerPos = new THREE.Vector3(1.6, 0, -7.5);
+    this.fryerStation = new FryerStation(fryerPos);
+    this.scene.add(this.fryerStation.mesh);
+    this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(fryerPos.x, 0.45, fryerPos.z), new THREE.Vector3(1.1, 0.9, 1.0), 'FryerStation');
+
+    // 4. Trash Can (Back kitchen wall right)
+    const trashPos = new THREE.Vector3(3.8, 0, -7.5);
     this.trashStation = new TrashStation(trashPos);
     this.scene.add(this.trashStation.mesh);
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(trashPos.x, 0.45, trashPos.z), new THREE.Vector3(0.7, 0.9, 0.7), 'TrashStation');
 
-    // 4. Ingredient Crate Dispensers (Kitchen Side Counters)
-    // Left counter dispensers: Bun, Raw Patty, Cheese, Lettuce
+    // 5. Ingredient Crate Dispensers (Kitchen Side Counters)
+    // Left counter dispensers: Bun Bottom, Bun Top, Raw Patty, Cheese
     const bunPos = new THREE.Vector3(-5.8, 0, -5.8);
     const bunCrate = new IngredientCrateStation(bunPos, 'bun_bottom');
     this.scene.add(bunCrate.mesh);
@@ -263,20 +273,32 @@ export class RestaurantWorld {
     this.crateStations.push(cheeseCrate);
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(cheesePos.x, 0.45, cheesePos.z), new THREE.Vector3(0.8, 0.9, 0.8), 'CheeseCrate');
 
-    // Right counter dispensers: Lettuce, Tomato
-    const lettucePos = new THREE.Vector3(5.8, 0, -5.5);
+    // Right counter dispensers: Raw Fries, Lettuce, Tomato, Soda Fountain
+    const friesPos = new THREE.Vector3(5.8, 0, -5.8);
+    const friesCrate = new IngredientCrateStation(friesPos, 'raw_fries');
+    this.scene.add(friesCrate.mesh);
+    this.crateStations.push(friesCrate);
+    this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(friesPos.x, 0.45, friesPos.z), new THREE.Vector3(0.8, 0.9, 0.8), 'FriesCrate');
+
+    const lettucePos = new THREE.Vector3(5.8, 0, -4.5);
     const lettuceCrate = new IngredientCrateStation(lettucePos, 'lettuce');
     this.scene.add(lettuceCrate.mesh);
     this.crateStations.push(lettuceCrate);
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(lettucePos.x, 0.45, lettucePos.z), new THREE.Vector3(0.8, 0.9, 0.8), 'LettuceCrate');
 
-    const tomatoPos = new THREE.Vector3(5.8, 0, -4.0);
+    const tomatoPos = new THREE.Vector3(5.8, 0, -3.2);
     const tomatoCrate = new IngredientCrateStation(tomatoPos, 'tomato');
     this.scene.add(tomatoCrate.mesh);
     this.crateStations.push(tomatoCrate);
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(tomatoPos.x, 0.45, tomatoPos.z), new THREE.Vector3(0.8, 0.9, 0.8), 'TomatoCrate');
 
-    // 5. Cash Register Station (Front service counter center)
+    // Drink Station (Soda fountain on right counter)
+    const drinkPos = new THREE.Vector3(5.8, 0, -1.6);
+    this.drinkStation = new DrinkStation(drinkPos);
+    this.scene.add(this.drinkStation.mesh);
+    this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(drinkPos.x, 0.45, drinkPos.z), new THREE.Vector3(1.1, 0.9, 0.9), 'DrinkStation');
+
+    // 6. Cash Register & Serving Tray Station (Front service counter center)
     const registerPos = new THREE.Vector3(0, 0, 0);
     this.cashRegisterStation = new CashRegisterStation(registerPos);
     this.scene.add(this.cashRegisterStation.mesh);
@@ -285,6 +307,8 @@ export class RestaurantWorld {
 
   public dispose(): void {
     if (this.grillStation) this.grillStation.dispose();
+    if (this.fryerStation) this.fryerStation.dispose();
+    if (this.drinkStation) this.drinkStation.dispose();
     if (this.assemblyStation) this.assemblyStation.dispose();
     if (this.trashStation) this.trashStation.dispose();
     if (this.cashRegisterStation) this.cashRegisterStation.dispose();

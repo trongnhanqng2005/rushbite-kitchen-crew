@@ -16,6 +16,10 @@ const COLOR_RAW_PATTY = new THREE.Color(INGREDIENT_DEFINITIONS.raw_patty.color);
 const COLOR_COOKED_PATTY = new THREE.Color(INGREDIENT_DEFINITIONS.cooked_patty.color);
 const COLOR_BURNT_PATTY = new THREE.Color(INGREDIENT_DEFINITIONS.burnt_patty.color);
 
+const COLOR_RAW_FRIES = new THREE.Color(INGREDIENT_DEFINITIONS.raw_fries.color);
+const COLOR_COOKED_FRIES = new THREE.Color(INGREDIENT_DEFINITIONS.cooked_fries.color);
+const COLOR_BURNT_FRIES = new THREE.Color(INGREDIENT_DEFINITIONS.burnt_fries.color);
+
 function getSharedCylinder(radius: number, height: number): THREE.CylinderGeometry {
   const key = `${radius.toFixed(2)}_${height.toFixed(2)}`;
   if (!cylinderGeometries.has(key)) {
@@ -60,7 +64,18 @@ export class FoodItem {
   constructor(type: FoodItemType, stacked?: FoodItemType[]) {
     this.id = 'food_' + Math.random().toString(36).substring(2, 9);
     this.type = type;
-    this.state = type === 'cooked_patty' ? 'COOKED' : type === 'assembled_burger' ? 'ASSEMBLED' : 'RAW';
+    if (type === 'cooked_patty' || type === 'cooked_fries') {
+      this.state = 'COOKED';
+    } else if (type === 'burnt_patty' || type === 'burnt_fries') {
+      this.state = 'BURNT';
+    } else if (type === 'assembled_burger') {
+      this.state = 'ASSEMBLED';
+    } else if (type.startsWith('drink_')) {
+      this.state = 'COOKED';
+    } else {
+      this.state = 'RAW';
+    }
+
     if (stacked) {
       this.stackedIngredients = [...stacked];
     }
@@ -71,21 +86,35 @@ export class FoodItem {
   }
 
   public advanceCooking(deltaProgress: number): void {
-    if (this.type !== 'raw_patty' && this.type !== 'cooked_patty') return;
+    if (this.type === 'raw_patty' || this.type === 'cooked_patty') {
+      this.cookProgress += deltaProgress;
 
-    this.cookProgress += deltaProgress;
+      if (this.cookProgress >= GameConfig.cooking.burntThreshold) {
+        this.state = 'BURNT';
+        this.type = 'burnt_patty';
+      } else if (this.cookProgress >= GameConfig.cooking.cookedMinProgress) {
+        this.state = 'COOKED';
+        this.type = 'cooked_patty';
+      } else {
+        this.state = 'COOKING';
+      }
 
-    if (this.cookProgress >= GameConfig.cooking.burntThreshold) {
-      this.state = 'BURNT';
-      this.type = 'burnt_patty';
-    } else if (this.cookProgress >= GameConfig.cooking.cookedMinProgress) {
-      this.state = 'COOKED';
-      this.type = 'cooked_patty';
-    } else {
-      this.state = 'COOKING';
+      this.updatePattyVisuals();
+    } else if (this.type === 'raw_fries' || this.type === 'cooked_fries') {
+      this.cookProgress += deltaProgress;
+
+      if (this.cookProgress >= GameConfig.cooking.burntThreshold) {
+        this.state = 'BURNT';
+        this.type = 'burnt_fries';
+      } else if (this.cookProgress >= GameConfig.cooking.cookedMinProgress) {
+        this.state = 'COOKED';
+        this.type = 'cooked_fries';
+      } else {
+        this.state = 'COOKING';
+      }
+
+      this.updateFriesVisuals();
     }
-
-    this.updatePattyVisuals();
   }
 
   private updatePattyVisuals(): void {
@@ -106,6 +135,23 @@ export class FoodItem {
     }
   }
 
+  private updateFriesVisuals(): void {
+    if (!this.primaryMaterial) return;
+
+    if (this.cookProgress < GameConfig.cooking.cookedMinProgress) {
+      const t = this.cookProgress / GameConfig.cooking.cookedMinProgress;
+      this.primaryMaterial.color.copy(COLOR_RAW_FRIES).lerp(COLOR_COOKED_FRIES, t);
+      this.primaryMaterial.roughness = 0.7;
+    } else if (this.cookProgress <= GameConfig.cooking.burntThreshold) {
+      const t = (this.cookProgress - GameConfig.cooking.cookedMinProgress) / (GameConfig.cooking.burntThreshold - GameConfig.cooking.cookedMinProgress);
+      this.primaryMaterial.color.copy(COLOR_COOKED_FRIES).lerp(COLOR_BURNT_FRIES, t);
+      this.primaryMaterial.roughness = 0.9;
+    } else {
+      this.primaryMaterial.color.copy(COLOR_BURNT_FRIES);
+      this.primaryMaterial.roughness = 1.0;
+    }
+  }
+
   public rebuildMesh(): void {
     // Clean old children
     while (this.mesh.children.length > 0) {
@@ -115,6 +161,16 @@ export class FoodItem {
 
     if (this.type === 'assembled_burger') {
       this.buildBurgerStackMesh();
+      return;
+    }
+
+    if (this.type === 'raw_fries' || this.type === 'cooked_fries' || this.type === 'burnt_fries') {
+      this.buildFriesMesh();
+      return;
+    }
+
+    if (this.type.startsWith('drink_')) {
+      this.buildDrinkMesh();
       return;
     }
 
@@ -184,6 +240,87 @@ export class FoodItem {
 
       currentY += def.height;
     });
+  }
+
+  private buildFriesMesh(): void {
+    const def = INGREDIENT_DEFINITIONS[this.type];
+
+    // Red cardboard fry box
+    const boxGeom = getSharedBox(0.22, 0.18, 0.14);
+    const boxMat = new THREE.MeshStandardMaterial({ color: '#D90429', roughness: 0.5 });
+    const boxMesh = new THREE.Mesh(boxGeom, boxMat);
+    boxMesh.position.y = 0.09;
+    boxMesh.castShadow = true;
+    boxMesh.receiveShadow = true;
+    this.mesh.add(boxMesh);
+
+    // Fry sticks
+    const initialColor = this.type === 'burnt_fries'
+      ? COLOR_BURNT_FRIES
+      : this.type === 'cooked_fries'
+      ? COLOR_COOKED_FRIES
+      : COLOR_RAW_FRIES;
+
+    this.primaryMaterial = new THREE.MeshStandardMaterial({
+      color: initialColor.clone(),
+      roughness: 0.7,
+    });
+
+    // Staggered fry sticks protruding from box
+    const stickGeom = getSharedBox(0.035, 0.18, 0.035);
+    const offsets = [
+      { x: -0.05, y: 0.18, z: -0.02, rot: 0.08 },
+      { x: 0.0, y: 0.20, z: 0.01, rot: -0.05 },
+      { x: 0.05, y: 0.19, z: -0.02, rot: 0.06 },
+      { x: -0.03, y: 0.17, z: 0.03, rot: -0.04 },
+      { x: 0.04, y: 0.18, z: 0.03, rot: 0.05 },
+    ];
+
+    offsets.forEach((off) => {
+      const stick = new THREE.Mesh(stickGeom, this.primaryMaterial!);
+      stick.position.set(off.x, off.y, off.z);
+      stick.rotation.z = off.rot;
+      stick.castShadow = true;
+      this.mesh.add(stick);
+    });
+
+    if (this.type === 'cooked_fries' || this.type === 'burnt_fries' || this.cookProgress > 0) {
+      this.updateFriesVisuals();
+    }
+  }
+
+  private buildDrinkMesh(): void {
+    const def = INGREDIENT_DEFINITIONS[this.type];
+
+    // Main cup body
+    const cupGeom = getSharedTaperedCylinder(0.12, 0.085, 0.26);
+    const cupMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(def.color),
+      roughness: 0.4,
+      metalness: 0.05,
+    });
+    const cupMesh = new THREE.Mesh(cupGeom, cupMat);
+    cupMesh.position.y = 0.13;
+    cupMesh.castShadow = true;
+    cupMesh.receiveShadow = true;
+    this.mesh.add(cupMesh);
+
+    // Cup lid
+    const lidGeom = getSharedCylinder(0.125, 0.02);
+    const lidMat = new THREE.MeshStandardMaterial({ color: '#F1F3F5', roughness: 0.2 });
+    const lidMesh = new THREE.Mesh(lidGeom, lidMat);
+    lidMesh.position.y = 0.265;
+    lidMesh.castShadow = true;
+    this.mesh.add(lidMesh);
+
+    // Straw sticking out
+    const strawGeom = getSharedCylinder(0.015, 0.12);
+    const strawMat = new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.3 });
+    const strawMesh = new THREE.Mesh(strawGeom, strawMat);
+    strawMesh.position.set(0.02, 0.31, 0);
+    strawMesh.rotation.z = -0.15;
+    strawMesh.castShadow = true;
+    this.mesh.add(strawMesh);
   }
 
   public dispose(): void {

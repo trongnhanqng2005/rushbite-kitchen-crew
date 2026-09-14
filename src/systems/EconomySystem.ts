@@ -41,11 +41,11 @@ export class EconomySystem {
    * Pure deterministic reward formula considering speed, accuracy, and customer satisfaction.
    */
   public calculateReward(
-    recipe: Recipe,
+    recipeOrItem: { basePrice: number },
     patienceRatio: number, // 0.0 to 1.0
     accuracy: number       // 0.0 to 1.0
   ): EarningsBreakdown {
-    const base = recipe.basePrice;
+    const base = recipeOrItem.basePrice;
 
     // Speed bonus: up to 40% of base price if served quickly (>50% patience remaining)
     let speedBonus = 0;
@@ -79,8 +79,12 @@ export class EconomySystem {
     };
   }
 
-  public registerCompletedOrder(recipe: Recipe, patienceRatio: number, accuracy: number): EarningsBreakdown {
-    const breakdown = this.calculateReward(recipe, patienceRatio, accuracy);
+  public registerCompletedOrder(
+    recipeOrItem: { basePrice: number },
+    patienceRatio: number,
+    accuracy: number
+  ): EarningsBreakdown {
+    const breakdown = this.calculateReward(recipeOrItem, patienceRatio, accuracy);
     const tip = +(breakdown.totalEarned - breakdown.basePrice).toFixed(2);
 
     this.shiftRevenue = +(this.shiftRevenue + breakdown.totalEarned).toFixed(2);

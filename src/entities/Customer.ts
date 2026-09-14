@@ -4,7 +4,8 @@
  */
 
 import * as THREE from 'three';
-import { Recipe } from '../data/recipes.ts';
+import { Recipe, RECIPES } from '../data/recipes.ts';
+import { ComboDefinition } from '../data/menu.ts';
 import { Order } from './Order.ts';
 
 export type CustomerState =
@@ -16,14 +17,20 @@ export type CustomerState =
   | 'LEAVING'
   | 'ANGRY_LEAVING';
 
-const SHIRT_COLORS = ['#E63946', '#457B9D', '#2A9D8F', '#E76F51', '#6A4C93', '#F4A261'];
-const SKIN_COLORS = ['#F8D7B8', '#D79E78', '#A9704F', '#6E452E', '#E4B590'];
+const SHIRT_COLORS = [
+  '#E63946', '#457B9D', '#2A9D8F', '#E76F51', '#6A4C93',
+  '#F4A261', '#1D3557', '#38B000', '#F72585', '#4361EE'
+];
+const PANTS_COLORS = ['#2B2D42', '#1E293B', '#3F4E4F', '#4A5568', '#1A202C'];
+const SKIN_COLORS = ['#F8D7B8', '#D79E78', '#A9704F', '#6E452E', '#E4B590', '#FCD5B4'];
+const ACCESSORY_COLORS = ['#1D3557', '#D90429', '#2B2D42', '#E09F3E', '#2A9D8F'];
 
 export class Customer {
   public readonly id: string;
   public state: CustomerState = 'ENTERING';
   public order: Order | null = null;
   public desiredRecipe: Recipe | null = null;
+  public desiredCombo: ComboDefinition | null = null;
   public satisfaction: number = 1.0; // 0.0 to 1.0
 
   public mesh: THREE.Group;
@@ -55,7 +62,9 @@ export class Customer {
 
   private buildStylizedModel(): void {
     const shirtColor = SHIRT_COLORS[Math.floor(Math.random() * SHIRT_COLORS.length)];
+    const pantsColor = PANTS_COLORS[Math.floor(Math.random() * PANTS_COLORS.length)];
     const skinColor = SKIN_COLORS[Math.floor(Math.random() * SKIN_COLORS.length)];
+    const accessoryColor = ACCESSORY_COLORS[Math.floor(Math.random() * ACCESSORY_COLORS.length)];
 
     // Body / Torso
     const bodyGeom = new THREE.CylinderGeometry(0.3, 0.35, 0.9, 8);
@@ -67,7 +76,7 @@ export class Customer {
 
     // Legs
     const legGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.45, 6);
-    const legMat = new THREE.MeshStandardMaterial({ color: '#2B2D42', roughness: 0.8 });
+    const legMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.8 });
     const legL = new THREE.Mesh(legGeom, legMat);
     legL.position.set(-0.16, 0.225, 0);
     const legR = new THREE.Mesh(legGeom, legMat);
@@ -83,12 +92,47 @@ export class Customer {
     this.headMesh.castShadow = true;
     this.mesh.add(this.headMesh);
 
-    // Casual Cap
-    const capGeom = new THREE.CylinderGeometry(0.26, 0.26, 0.08, 8);
-    const capMat = new THREE.MeshStandardMaterial({ color: '#1D3557' });
-    const cap = new THREE.Mesh(capGeom, capMat);
-    cap.position.y = 1.62;
-    this.mesh.add(cap);
+    // Varied accessories (Hat, Beanie, Hair Bun, or Glasses)
+    const styleChoice = Math.floor(Math.random() * 4);
+    if (styleChoice === 0) {
+      // Baseball cap
+      const capGeom = new THREE.CylinderGeometry(0.26, 0.26, 0.08, 8);
+      const capMat = new THREE.MeshStandardMaterial({ color: accessoryColor });
+      const cap = new THREE.Mesh(capGeom, capMat);
+      cap.position.y = 1.62;
+      this.mesh.add(cap);
+
+      const brimGeom = new THREE.BoxGeometry(0.2, 0.02, 0.16);
+      const brim = new THREE.Mesh(brimGeom, capMat);
+      brim.position.set(0, 1.59, 0.22);
+      this.mesh.add(brim);
+    } else if (styleChoice === 1) {
+      // Winter Beanie
+      const beanieGeom = new THREE.SphereGeometry(0.25, 8, 8, 0, Math.PI * 2, 0, Math.PI / 1.8);
+      const beanieMat = new THREE.MeshStandardMaterial({ color: accessoryColor, roughness: 0.9 });
+      const beanie = new THREE.Mesh(beanieGeom, beanieMat);
+      beanie.position.y = 1.52;
+      this.mesh.add(beanie);
+    } else if (styleChoice === 2) {
+      // Glasses
+      const frameGeom = new THREE.BoxGeometry(0.38, 0.08, 0.04);
+      const frameMat = new THREE.MeshStandardMaterial({ color: '#1B1C1E', roughness: 0.3 });
+      const glasses = new THREE.Mesh(frameGeom, frameMat);
+      glasses.position.set(0, 1.5, 0.22);
+      this.mesh.add(glasses);
+    } else {
+      // Hair style puff
+      const hairGeom = new THREE.SphereGeometry(0.14, 8, 8);
+      const hairMat = new THREE.MeshStandardMaterial({ color: '#2B2119', roughness: 0.8 });
+      const hairBun = new THREE.Mesh(hairGeom, hairMat);
+      hairBun.position.set(0, 1.74, -0.06);
+      this.mesh.add(hairBun);
+    }
+
+    // Subtle height and width variety (+/- 8%)
+    const heightScale = 0.92 + Math.random() * 0.16;
+    const widthScale = 0.94 + Math.random() * 0.12;
+    this.mesh.scale.set(widthScale, heightScale, widthScale);
 
     // Mood indicator sprite above head
     this.setupMoodSprite();

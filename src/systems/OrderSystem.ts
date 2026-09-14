@@ -5,6 +5,7 @@
 
 import { Order, OrderSnapshot } from '../entities/Order.ts';
 import { Recipe, RECIPES, evaluateBurgerAgainstRecipe } from '../data/recipes.ts';
+import { ComboDefinition, MENU_COMBOS, evaluateOrderComponents } from '../data/menu.ts';
 import { FoodItem } from '../entities/FoodItem.ts';
 import { GameConfig } from '../game/GameConfig.ts';
 import { EventBus } from '../core/EventBus.ts';
@@ -13,6 +14,7 @@ export interface OrderValidationResult {
   success: boolean;
   order: Order;
   recipe: Recipe;
+  combo?: ComboDefinition;
   accuracy: number;
   feedback: string;
 }
@@ -22,11 +24,13 @@ export class OrderSystem {
   private eventBus = EventBus.getInstance();
   public patienceMultiplier: number = 1.0;
 
-  // Unlocked recipes for current shift
+  // Unlocked recipes and combos for current shift
   public availableRecipes: Recipe[] = [...RECIPES.filter((r) => r.unlockShift === 1)];
+  public availableCombos: ComboDefinition[] = [...MENU_COMBOS.filter((c) => c.unlockShift === 1)];
 
   public setShiftRecipes(shiftNumber: number): void {
     this.availableRecipes = RECIPES.filter((r) => r.unlockShift <= shiftNumber);
+    this.availableCombos = MENU_COMBOS.filter((c) => c.unlockShift <= shiftNumber);
   }
 
   public get orderCount(): number {
@@ -37,9 +41,13 @@ export class OrderSystem {
     return this.activeOrders.length < GameConfig.customer.maxActiveOrders;
   }
 
-  public createOrder(customerId: string, recipe: Recipe, currentTime: number): Order {
+  public createOrder(
+    customerId: string,
+    recipeOrCombo: Recipe | ComboDefinition,
+    currentTime: number
+  ): Order {
     const maxPatience = GameConfig.customer.basePatienceSeconds * this.patienceMultiplier;
-    const order = new Order(customerId, recipe, maxPatience, currentTime);
+    const order = new Order(customerId, recipeOrCombo, maxPatience, currentTime);
     this.activeOrders.push(order);
 
     this.eventBus.emit('ORDER_CREATED', order.toSnapshot());
@@ -60,7 +68,10 @@ export class OrderSystem {
     }
   }
 
-  public validateAndFulfill(customerId: string, foodItem: FoodItem): OrderValidationResult {
+  public validateAndFulfill(
+    customerId: string,
+    foodItemOrItems: FoodItem | FoodItem[]
+  ): OrderValidationResult {
     const orderIndex = this.activeOrders.findIndex((o) => o.customerId === customerId);
     if (orderIndex === -1) {
       return {
@@ -73,8 +84,9 @@ export class OrderSystem {
     }
 
     const order = this.activeOrders[orderIndex];
-    const layers = foodItem.type === 'assembled_burger' ? foodItem.stackedIngredients : [foodItem.type];
-    const evalResult = evaluateBurgerAgainstRecipe(layers, order.recipe);
+    const items = Array.isArray(foodItemOrItems) ? foodItemOrItems : [foodItemOrItems];
+
+    const evalResult = evaluateOrderComponents(items, order.combo);
 
     if (evalResult.matches) {
       order.status = 'COMPLETED';
@@ -89,6 +101,7 @@ export class OrderSystem {
         success: true,
         order,
         recipe: order.recipe,
+        combo: order.combo,
         accuracy: evalResult.accuracy,
         feedback: evalResult.feedback,
       };
@@ -103,6 +116,7 @@ export class OrderSystem {
         success: false,
         order,
         recipe: order.recipe,
+        combo: order.combo,
         accuracy: evalResult.accuracy,
         feedback: evalResult.feedback,
       };

@@ -33,6 +33,11 @@ export class ShiftSystem {
   public elapsedSimulationTime: number = 0;
   public lastResults: ShiftResultsData | null = null;
 
+  // Rush Period Tracking
+  public isRushActive: boolean = false;
+  private rushAnnounced: boolean = false;
+  private rushEndedAnnounced: boolean = false;
+
   private eventBus = EventBus.getInstance();
 
   constructor(initialShift: number = 1) {
@@ -49,6 +54,9 @@ export class ShiftSystem {
     this.bestOrderTime = 999;
     this.elapsedSimulationTime = 0;
     this.lastResults = null;
+    this.isRushActive = false;
+    this.rushAnnounced = false;
+    this.rushEndedAnnounced = false;
 
     this.eventBus.emit('SHIFT_STARTED', { shiftNumber: this.shiftNumber });
   }
@@ -60,6 +68,27 @@ export class ShiftSystem {
     this.elapsedSimulationTime += dt;
     if (this.remainingSeconds <= 0) {
       this.remainingSeconds = 0;
+    }
+
+    // Deterministic Rush Period (starts at 35% of shift, ends at 70%)
+    const rushStart = this.totalShiftSeconds * 0.35;
+    const rushEnd = this.totalShiftSeconds * 0.70;
+
+    if (this.elapsedSimulationTime >= rushStart && this.elapsedSimulationTime < rushEnd) {
+      if (!this.rushAnnounced) {
+        this.isRushActive = true;
+        this.rushAnnounced = true;
+        this.eventBus.emit('RUSH_PERIOD_STARTED', {
+          duration: rushEnd - rushStart,
+          remaining: rushEnd - this.elapsedSimulationTime,
+        });
+      }
+    } else if (this.elapsedSimulationTime >= rushEnd) {
+      if (this.isRushActive) {
+        this.isRushActive = false;
+        this.rushEndedAnnounced = true;
+        this.eventBus.emit('RUSH_PERIOD_ENDED', {});
+      }
     }
   }
 

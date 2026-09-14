@@ -127,6 +127,8 @@ export class Game {
     this.interactionSystem = new InteractionSystem();
     // Register all interactable stations
     this.interactionSystem.registerInteractable(this.restaurantWorld.grillStation);
+    this.interactionSystem.registerInteractable(this.restaurantWorld.fryerStation);
+    this.interactionSystem.registerInteractable(this.restaurantWorld.drinkStation);
     this.interactionSystem.registerInteractable(this.restaurantWorld.assemblyStation);
     this.interactionSystem.registerInteractable(this.restaurantWorld.cashRegisterStation);
     this.interactionSystem.registerInteractable(this.restaurantWorld.trashStation);
@@ -134,7 +136,10 @@ export class Game {
       this.interactionSystem.registerInteractable(crate);
     });
 
-    this.cookingSystem = new CookingSystem(this.restaurantWorld.grillStation);
+    this.cookingSystem = new CookingSystem(
+      this.restaurantWorld.grillStation,
+      this.restaurantWorld.fryerStation
+    );
     this.orderSystem = new OrderSystem();
     this.customerSystem = new CustomerSystem(this.restaurantWorld, this.orderSystem);
     this.economySystem = new EconomySystem(this.state.cash);
@@ -196,40 +201,60 @@ export class Game {
 
     // Listen to SERVE_ATTEMPT from cash register
     this.unsubscribers.push(
-      this.eventBus.on('SERVE_ATTEMPT', ({ customer, foodItem }: { customer: Customer; foodItem: FoodItem }) => {
-        const result = this.orderSystem.validateAndFulfill(customer.id, foodItem);
+      this.eventBus.on(
+        'SERVE_ATTEMPT',
+        ({
+          customer,
+          foodItem,
+          foodItems,
+        }: {
+          customer: Customer;
+          foodItem?: FoodItem;
+          foodItems?: FoodItem[];
+        }) => {
+          const items =
+            foodItems && foodItems.length > 0
+              ? foodItems
+              : foodItem
+              ? [foodItem]
+              : [];
 
-        if (result.success) {
-          // Accurate gameplay simulation clock duration (not wall-clock)
-          const orderTime = this.simulationTime - result.order.createdTime;
-          this.economySystem.registerCompletedOrder(
-            result.recipe,
-            result.order.patienceRatio,
-            result.accuracy
-          );
+          const result = this.orderSystem.validateAndFulfill(customer.id, items);
 
-          this.customerSystem.completeCustomerOrder(customer.id);
-          this.shiftSystem.recordCompletedOrder(orderTime, result.accuracy);
-          this.soundManager.playOrderServed();
+          if (result.success) {
+            // Accurate gameplay simulation clock duration (not wall-clock)
+            const orderTime = this.simulationTime - result.order.createdTime;
+            const targetReward = result.combo || result.recipe;
+            this.economySystem.registerCompletedOrder(
+              targetReward,
+              result.order.patienceRatio,
+              result.accuracy
+            );
 
-          this.state.cash = this.economySystem.cash;
-          this.state.shiftRevenue = this.economySystem.shiftRevenue;
-          this.state.shiftTips = this.economySystem.shiftTips;
-          this.state.activeOrders = this.orderSystem.getSnapshots();
+            this.customerSystem.completeCustomerOrder(customer.id);
+            this.shiftSystem.recordCompletedOrder(orderTime, result.accuracy);
+            this.soundManager.playOrderServed();
 
-          // Consumed item from hand
-          foodItem.dispose();
-          this.player.setHeldItem(null);
-        } else {
-          this.soundManager.playError();
-          this.economySystem.registerFailedOrder();
-          this.shiftSystem.recordFailedOrder();
-          this.state.cash = this.economySystem.cash;
-          this.state.activeOrders = this.orderSystem.getSnapshots();
-          // Keep or drop meal
-          this.player.setHeldItem(foodItem);
+            this.state.cash = this.economySystem.cash;
+            this.state.shiftRevenue = this.economySystem.shiftRevenue;
+            this.state.shiftTips = this.economySystem.shiftTips;
+            this.state.activeOrders = this.orderSystem.getSnapshots();
+
+            // Clear tray and consumed items
+            this.restaurantWorld.cashRegisterStation.clearTray();
+            if (this.player.heldItem && items.includes(this.player.heldItem)) {
+              this.player.heldItem.dispose();
+              this.player.setHeldItem(null);
+            }
+          } else {
+            this.soundManager.playError();
+            this.economySystem.registerFailedOrder();
+            this.shiftSystem.recordFailedOrder();
+            this.state.cash = this.economySystem.cash;
+            this.state.activeOrders = this.orderSystem.getSnapshots();
+          }
         }
-      })
+      )
     );
 
     // Listen to expired orders
@@ -260,7 +285,9 @@ export class Game {
     this.customerSystem.clear();
     this.orderSystem.clear();
     this.restaurantWorld.grillStation.clear();
+    this.restaurantWorld.fryerStation.clear();
     this.restaurantWorld.assemblyStation.clear();
+    this.restaurantWorld.cashRegisterStation.clearTray();
     this.player.setHeldItem(null);
 
     this.simulationTime = 0;
@@ -269,6 +296,7 @@ export class Game {
     this.state.remainingShiftSeconds = this.shiftSystem.remainingSeconds;
     this.state.totalShiftSeconds = this.shiftSystem.totalShiftSeconds;
     this.state.activeOrders = [];
+    this.state.isRushActive = false;
 
     this.gameLoop.start();
     this.player.requestPointerLock();
@@ -294,10 +322,14 @@ export class Game {
     this.customerSystem.clear();
     this.orderSystem.clear();
     this.restaurantWorld.grillStation.clear();
+    this.restaurantWorld.fryerStation.clear();
     this.restaurantWorld.assemblyStation.clear();
+    this.restaurantWorld.cashRegisterStation.clearTray();
     this.player.setHeldItem(null);
     this.soundManager.stopGrillSizzle();
+    this.soundManager.stopFryerSizzle();
     this.state.activeOrders = [];
+    this.state.isRushActive = false;
   }
 
   public nextShift(): void {
@@ -334,6 +366,7 @@ export class Game {
     this.state.phase = 'SHIFT_RESULTS';
     this.player.unlockPointer();
     this.soundManager.stopGrillSizzle();
+    this.soundManager.stopFryerSizzle();
     this.soundManager.playOrderServed();
     this.saveProgression();
   }
@@ -359,6 +392,7 @@ export class Game {
     // 5. Shift clock
     this.shiftSystem.update(dt);
     this.state.remainingShiftSeconds = Math.max(0, Math.ceil(this.shiftSystem.remainingSeconds));
+    this.state.isRushActive = this.shiftSystem.isRushActive;
 
     // Check if shift reached time limit
     if (this.shiftSystem.isExpired()) {
@@ -370,6 +404,18 @@ export class Game {
     const prompt = this.interactionSystem.update(this.camera, this.player.heldItem);
     this.state.currentPrompt = prompt.label;
     this.state.secondaryPrompt = prompt.secondaryLabel;
+
+    // Update held item for HUD
+    if (this.player.heldItem) {
+      this.state.heldItem = {
+        type: this.player.heldItem.type,
+        state: this.player.heldItem.state,
+        cookProgress: this.player.heldItem.cookProgress,
+        layers: this.player.heldItem.stackedIngredients,
+      };
+    } else {
+      this.state.heldItem = null;
+    }
 
     // 7. Update active orders snapshots for HUD (throttled to ~12 Hz / 80ms)
     this.orderSnapshotTimer += dt;

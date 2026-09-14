@@ -14,6 +14,10 @@ export class SoundManager {
   private sizzleNode: AudioBufferSourceNode | null = null;
   private sizzleGain: GainNode | null = null;
   private sizzleStopTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  private fryerNode: AudioBufferSourceNode | null = null;
+  private fryerGain: GainNode | null = null;
+  private fryerStopTimeout: ReturnType<typeof setTimeout> | null = null;
   private isInitialized = false;
 
   public static getInstance(): SoundManager {
@@ -291,6 +295,142 @@ export class SoundManager {
     }, 250);
   }
 
+  public startFryerSizzle(): void {
+    if (!this.ctx || !this.sfxGain || this.fryerNode) return;
+    if (this.fryerStopTimeout !== null) {
+      clearTimeout(this.fryerStopTimeout);
+      this.fryerStopTimeout = null;
+    }
+    try {
+      const bufferSize = this.ctx.sampleRate * 2;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      let lastOut = 0;
+
+      // Deep bubbling fryer noise
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        data[i] = (lastOut + 0.03 * white) / 1.03;
+        lastOut = data[i];
+        data[i] *= 4.0;
+      }
+
+      this.fryerNode = this.ctx.createBufferSource();
+      this.fryerNode.buffer = buffer;
+      this.fryerNode.loop = true;
+
+      // Lower bandpass filter for bubbling deep oil fry
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1400;
+      filter.Q.value = 1.8;
+
+      this.fryerGain = this.ctx.createGain();
+      this.fryerGain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+
+      this.fryerNode.connect(filter);
+      filter.connect(this.fryerGain);
+      this.fryerGain.connect(this.sfxGain);
+
+      this.fryerNode.start();
+    } catch (e) {
+      console.warn('[SoundManager] Error starting fryer sizzle:', e);
+    }
+  }
+
+  public stopFryerSizzle(): void {
+    if (this.fryerStopTimeout !== null) {
+      clearTimeout(this.fryerStopTimeout);
+      this.fryerStopTimeout = null;
+    }
+    if (this.fryerGain && this.ctx) {
+      this.fryerGain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
+    }
+    this.fryerStopTimeout = setTimeout(() => {
+      this.fryerStopTimeout = null;
+      if (this.fryerNode) {
+        try {
+          this.fryerNode.stop();
+          this.fryerNode.disconnect();
+        } catch (_) {}
+        this.fryerNode = null;
+        this.fryerGain = null;
+      }
+    }, 250);
+  }
+
+  public playDrinkDispense(): void {
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+
+    // Fizz burst
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.3);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 3500;
+
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.2, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.sfxGain);
+    noise.start(now);
+
+    // Liquid tone
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(540, now + 0.28);
+
+    oscGain.gain.setValueAtTime(0.18, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+    osc.connect(oscGain);
+    oscGain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.31);
+  }
+
+  public playRushWarning(): void {
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+
+    // Urgent two-tone chime / siren
+    [
+      { freq: 440, time: now },
+      { freq: 587.33, time: now + 0.16 },
+      { freq: 440, time: now + 0.32 },
+      { freq: 587.33, time: now + 0.48 },
+    ].forEach((tone) => {
+      if (!this.ctx || !this.sfxGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(tone.freq, tone.time);
+
+      gain.gain.setValueAtTime(0.25, tone.time);
+      gain.gain.exponentialRampToValueAtTime(0.001, tone.time + 0.15);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(tone.time);
+      osc.stop(tone.time + 0.16);
+    });
+  }
+
   public dispose(): void {
     if (this.sizzleStopTimeout !== null) {
       clearTimeout(this.sizzleStopTimeout);
@@ -303,6 +443,18 @@ export class SoundManager {
       } catch (_) {}
       this.sizzleNode = null;
       this.sizzleGain = null;
+    }
+    if (this.fryerStopTimeout !== null) {
+      clearTimeout(this.fryerStopTimeout);
+      this.fryerStopTimeout = null;
+    }
+    if (this.fryerNode) {
+      try {
+        this.fryerNode.stop();
+        this.fryerNode.disconnect();
+      } catch (_) {}
+      this.fryerNode = null;
+      this.fryerGain = null;
     }
   }
 }

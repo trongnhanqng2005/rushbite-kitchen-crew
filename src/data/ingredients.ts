@@ -11,9 +11,15 @@ export type FoodItemType =
   | 'lettuce'
   | 'tomato'
   | 'bun_top'
-  | 'assembled_burger';
+  | 'assembled_burger'
+  | 'raw_fries'
+  | 'cooked_fries'
+  | 'burnt_fries'
+  | 'drink_cola'
+  | 'drink_lemon'
+  | 'drink_orange';
 
-export type FoodItemState = 'RAW' | 'COOKING' | 'COOKED' | 'BURNT' | 'ASSEMBLED';
+export type FoodItemState = 'RAW' | 'COOKING' | 'FRYING' | 'COOKED' | 'READY' | 'BURNT' | 'ASSEMBLED';
 
 export interface IngredientDef {
   id: FoodItemType;
@@ -116,5 +122,65 @@ export const INGREDIENT_DEFINITIONS: Record<FoodItemType, IngredientDef> = {
     height: 0.35,
     radius: 0.24,
     iconText: '🍔',
+  },
+  raw_fries: {
+    id: 'raw_fries',
+    name: 'Raw Fries',
+    isCookable: true,
+    cooksInto: 'cooked_fries',
+    burnsInto: 'burnt_fries',
+    color: '#E8D28B',
+    cookedColor: '#E5A93C',
+    burntColor: '#2B231A',
+    height: 0.16,
+    radius: 0.14,
+    iconText: '🍟',
+  },
+  cooked_fries: {
+    id: 'cooked_fries',
+    name: 'Crispy Fries',
+    isCookable: true,
+    burnsInto: 'burnt_fries',
+    color: '#E5A93C',
+    burntColor: '#2B231A',
+    height: 0.16,
+    radius: 0.14,
+    iconText: '🍟',
+  },
+  burnt_fries: {
+    id: 'burnt_fries',
+    name: 'Burnt Fries',
+    isCookable: false,
+    color: '#2B231A',
+    height: 0.16,
+    radius: 0.14,
+    iconText: '⬛',
+  },
+  drink_cola: {
+    id: 'drink_cola',
+    name: 'Fountain Cola',
+    isCookable: false,
+    color: '#E63946', // Distinct red cup with dark cola lid
+    height: 0.26,
+    radius: 0.11,
+    iconText: '🥤',
+  },
+  drink_lemon: {
+    id: 'drink_lemon',
+    name: 'Lemon Soda',
+    isCookable: false,
+    color: '#A7C957', // Citrus lime yellow-green cup
+    height: 0.26,
+    radius: 0.11,
+    iconText: '🍋',
+  },
+  drink_orange: {
+    id: 'drink_orange',
+    name: 'Orange Soda',
+    isCookable: false,
+    color: '#FB8500', // Vibrant orange cup
+    height: 0.26,
+    radius: 0.11,
+    iconText: '🍊',
   },
 };

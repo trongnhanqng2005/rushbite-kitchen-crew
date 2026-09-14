@@ -25,20 +25,39 @@ export class CustomerSystem {
   public customerPatienceMultiplier: number = 1.0;
   public spawnRateMultiplier: number = 1.0;
   private currentSimulationTime: number = 0;
-  private unsubOrderTaken: (() => void) | null = null;
+  private unsubscribers: (() => void)[] = [];
 
   constructor(world: RestaurantWorld, orderSystem: OrderSystem) {
     this.world = world;
     this.orderSystem = orderSystem;
 
     // Listen to order taken event from register
-    this.unsubOrderTaken = this.eventBus.on('ORDER_TAKEN', ({ customer }: { customer: Customer }) => {
-      if (customer.state === 'WAITING_TO_ORDER' && customer.desiredRecipe) {
-        customer.state = 'WAITING_FOR_FOOD';
-        customer.updateMoodIcon('⏳');
-        customer.order = this.orderSystem.createOrder(customer.id, customer.desiredRecipe, this.currentSimulationTime);
-      }
-    });
+    this.unsubscribers.push(
+      this.eventBus.on('ORDER_TAKEN', ({ customer }: { customer: Customer }) => {
+        if (customer.state === 'WAITING_TO_ORDER') {
+          customer.state = 'WAITING_FOR_FOOD';
+          customer.updateMoodIcon('⏳');
+          const orderTarget = customer.desiredCombo || customer.desiredRecipe;
+          if (orderTarget) {
+            customer.order = this.orderSystem.createOrder(customer.id, orderTarget, this.currentSimulationTime);
+          }
+        }
+      })
+    );
+
+    // Rush hour speedup & warning
+    this.unsubscribers.push(
+      this.eventBus.on('RUSH_PERIOD_STARTED', () => {
+        this.spawnRateMultiplier *= 1.8;
+        this.soundManager.playRushWarning();
+      })
+    );
+
+    this.unsubscribers.push(
+      this.eventBus.on('RUSH_PERIOD_ENDED', () => {
+        this.spawnRateMultiplier /= 1.8;
+      })
+    );
   }
 
   public update(dt: number, currentTime: number): void {
@@ -80,16 +99,25 @@ export class CustomerSystem {
     const id = 'cust_' + Math.random().toString(36).substring(2, 7);
     const customer = new Customer(id, this.world.entranceSpawnPoint);
 
-    // Select random unlocked recipe
-    const recipes = this.orderSystem.availableRecipes;
-    customer.desiredRecipe = recipes[Math.floor(Math.random() * recipes.length)];
+    // Select random unlocked combo or recipe
+    const combos = this.orderSystem.availableCombos;
+    if (combos && combos.length > 0) {
+      const selectedCombo = combos[Math.floor(Math.random() * combos.length)];
+      customer.desiredCombo = selectedCombo;
+      const burgerComp = selectedCombo.components.find((c) => c.type === 'burger');
+      customer.desiredRecipe = burgerComp?.recipe || this.orderSystem.availableRecipes[0];
+    } else {
+      const recipes = this.orderSystem.availableRecipes;
+      customer.desiredRecipe = recipes[Math.floor(Math.random() * recipes.length)];
+    }
 
     this.customers.push(customer);
     this.world.scene.add(customer.mesh);
 
     // Play arrival chime
     this.soundManager.playOrderArrival();
-    this.eventBus.emit('CUSTOMER_ARRIVED', { customerId: id, recipe: customer.desiredRecipe.name });
+    const orderName = customer.desiredCombo?.name || customer.desiredRecipe?.name || 'Order';
+    this.eventBus.emit('CUSTOMER_ARRIVED', { customerId: id, recipe: orderName });
 
     this.recalculateQueuePositions();
     return customer;
@@ -200,9 +228,9 @@ export class CustomerSystem {
 
   public dispose(): void {
     this.clear();
-    if (this.unsubOrderTaken) {
-      this.unsubOrderTaken();
-      this.unsubOrderTaken = null;
+    for (const unsub of this.unsubscribers) {
+      unsub();
     }
+    this.unsubscribers = [];
   }
 }

@@ -25,6 +25,10 @@ import { FoodItemType } from '../src/data/ingredients.ts';
 import { GameTime } from '../src/core/Time.ts';
 import { EventBus } from '../src/core/EventBus.ts';
 import { StorageUtil, DEFAULT_SAVE_DATA } from '../src/utils/storage.ts';
+import { FryerStation } from '../src/stations/FryerStation.ts';
+import { DrinkStation } from '../src/stations/DrinkStation.ts';
+import { CashRegisterStation } from '../src/stations/CashRegisterStation.ts';
+import { Customer } from '../src/entities/Customer.ts';
 
 // Setup minimal headless DOM environment for Node.js test execution
 const mockStorage: Record<string, string> = {};
@@ -102,13 +106,26 @@ const fakeGl = {
   canvas: { width: 1024, height: 768 },
 };
 
+const fake2DContext = {
+  fillText: () => {},
+  clearRect: () => {},
+  beginPath: () => {},
+  arc: () => {},
+  fill: () => {},
+  stroke: () => {},
+  font: '',
+  fillStyle: '',
+  textAlign: '',
+  textBaseline: '',
+};
+
 const fakeElement: Record<string, unknown> = {
   addEventListener: () => {},
   removeEventListener: () => {},
   appendChild: () => {},
   removeChild: () => {},
   parentElement: { removeChild: () => {} },
-  getContext: () => fakeGl,
+  getContext: (type: string) => (type === '2d' ? fake2DContext : fakeGl),
   style: {},
   width: 1024,
   height: 768,
@@ -454,6 +471,149 @@ runCategory('Category 9: Three.js Resource Ownership & Disposal', () => {
   item2.dispose();
 });
 
+// ---------------------------------------------------------------------------
+// CATEGORY 10: Milestone 2 Stations, Combos & Rush Hour Verification
+// ---------------------------------------------------------------------------
+runCategory('Category 10: Milestone 2 Stations, Combos & Rush Hour Verification', () => {
+  // Case 10.1: FryerStation dual baskets and cooking
+  const fryer = new FryerStation(new THREE.Vector3(0, 0, 0));
+
+  assert(fryer.baskets.length === 2, 'FryerStation must have 2 independent baskets');
+  assert(fryer.baskets[0].item === null, 'Basket 0 starts empty');
+  assert(fryer.baskets[1].item === null, 'Basket 1 starts empty');
+
+  // Place raw fries into basket 0
+  const rawFries = new FoodItem('raw_fries');
+  const remainingHand = fryer.interact(rawFries);
+  assert(remainingHand === null, 'Raw fries must be accepted into empty basket');
+  assert(fryer.baskets[0].item !== null, 'Basket 0 must now contain the food item');
+  assert(fryer.baskets[0].item!.state === 'COOKING', 'Fries in basket must enter COOKING state');
+
+  // Advance cooking
+  fryer.forEachCookingFries((fries: FoodItem) => {
+    fries.advanceCooking(1.0); // 100% cooked
+  });
+  assert(fryer.baskets[0].item?.state === 'COOKED', 'Fries must become COOKED after cooking advances');
+  assert(fryer.baskets[0].item?.type === 'cooked_fries', 'Item type must transform into cooked_fries');
+
+  // Retrieve cooked fries with empty hands
+  const retrievedFries = fryer.interact(null);
+  assert(retrievedFries !== null, 'Player with empty hands must retrieve cooked fries');
+  assert(retrievedFries!.type === 'cooked_fries', 'Retrieved item type must be cooked_fries');
+  assert(retrievedFries!.state === 'COOKED', 'Retrieved item state must be COOKED');
+  assert(fryer.baskets[0].item === null, 'Basket must return to empty after retrieval');
+
+  fryer.dispose();
+  retrievedFries!.dispose();
+
+  // Case 10.2: DrinkStation flavor cycling and dispensing
+  const drinkStation = new DrinkStation(new THREE.Vector3(0, 0, 0));
+
+  assert(drinkStation.selectedFlavor.type === 'drink_cola', 'DrinkStation initial flavor is drink_cola');
+  drinkStation.secondaryInteract(null);
+  assert(drinkStation.selectedFlavor.type === 'drink_lemon', 'RMB must cycle flavor to drink_lemon');
+  drinkStation.secondaryInteract(null);
+  assert(drinkStation.selectedFlavor.type === 'drink_orange', 'RMB must cycle flavor to drink_orange');
+  drinkStation.secondaryInteract(null);
+  assert(drinkStation.selectedFlavor.type === 'drink_cola', 'RMB must wrap flavor back to drink_cola');
+
+  // Dispense drink
+  const dispensedDrink = drinkStation.interact(null);
+  assert(dispensedDrink !== null, 'Interacting with empty hands dispenses a drink');
+  assert(dispensedDrink!.type === 'drink_cola', 'Dispensed item must match currently selected flavor drink_cola');
+  assert(dispensedDrink!.state === 'COOKED', 'Drink is ready to serve');
+
+  drinkStation.dispose();
+  dispensedDrink!.dispose();
+
+  // Case 10.3: Multi-component Combo validation in OrderSystem
+  const orderSystem = new OrderSystem();
+  orderSystem.setShiftRecipes(4); // Unlocks full trio combos
+
+  const targetCombo = orderSystem.availableCombos.find((c) => c.components.length === 3)!;
+  assert(targetCombo !== undefined, 'Shift 4 must provide 3-component trio combos');
+
+  const comboOrder = orderSystem.createOrder('cust_test', targetCombo, 0);
+  assert(comboOrder.combo !== undefined, 'Order created with combo must have combo definition');
+  assert(comboOrder.components.length === 3, 'Combo order must have 3 components');
+
+  // Create combo food items: burger + fries + drink
+  const burgerItem = new FoodItem('assembled_burger');
+  burgerItem.state = 'ASSEMBLED';
+  const burgerRecipe = targetCombo.components.find((c) => c.type === 'burger')?.recipe || RECIPES[0];
+  burgerItem.stackedIngredients = [...burgerRecipe.ingredients];
+
+  const friesItem = new FoodItem('cooked_fries');
+  friesItem.state = 'COOKED';
+
+  const drinkComponent = targetCombo.components.find((c) => c.type === 'drink')!;
+  const sodaItem = new FoodItem(drinkComponent.drinkType || 'drink_cola');
+  sodaItem.state = 'COOKED';
+
+  // Test partial fulfillment (only burger provided)
+  const partialResult = orderSystem.validateAndFulfill('cust_test', [burgerItem]);
+  assert(partialResult.success === false, 'Single burger must NOT fulfill a 3-component combo order');
+
+  // Test complete fulfillment (burger + fries + drink)
+  const fullResult = orderSystem.validateAndFulfill('cust_test', [burgerItem, friesItem, sodaItem]);
+  assert(fullResult.success === true, 'All combo components must successfully fulfill combo order');
+  assert(fullResult.accuracy >= 0.95, 'Matching components must achieve high accuracy');
+
+  burgerItem.dispose();
+  friesItem.dispose();
+  sodaItem.dispose();
+  orderSystem.clear();
+
+  // Case 10.4: CashRegisterStation Serving Tray mechanics
+  const register = new CashRegisterStation(new THREE.Vector3(0, 0, 0));
+
+  const customer = new Customer('cust_tray', new THREE.Vector3(0, 0, 1.6));
+  customer.state = 'WAITING_FOR_FOOD';
+  register.activeCustomer = customer;
+
+  assert(register.trayItems.length === 0, 'Tray starts empty');
+
+  // Place item 1 on tray
+  const testBurger = new FoodItem('assembled_burger');
+  const handAfter1 = register.interact(testBurger);
+  assert(handAfter1 === null, 'Item placed on tray frees player hands');
+  assert(register.trayItems.length === 1, 'Tray now contains 1 item');
+
+  // Place item 2 on tray
+  const testFries = new FoodItem('cooked_fries');
+  const handAfter2 = register.interact(testFries);
+  assert(handAfter2 === null, 'Second item placed on tray');
+  assert(register.trayItems.length === 2, 'Tray now contains 2 items');
+
+  // Pop item off tray with RMB
+  const popped = register.secondaryInteract(null);
+  assert(popped !== null, 'RMB must pick back up last item from tray');
+  assert(popped!.type === 'cooked_fries', 'Popped item was fries');
+  assert(register.trayItems.length === 1, 'Tray count decremented to 1');
+
+  popped!.dispose();
+  register.clearTray();
+  customer.dispose();
+  register.dispose();
+
+  // Case 10.5: Deterministic Rush Period in ShiftSystem
+  const shift = new ShiftSystem(1);
+  shift.startShift();
+  assert(shift.isRushActive === false, 'Rush period is initially false');
+
+  // Advance to 30% of shift (before rush)
+  shift.update(shift.totalShiftSeconds * 0.30);
+  assert(shift.isRushActive === false, 'Rush period not active before 35%');
+
+  // Advance into rush window (50% of shift)
+  shift.update(shift.totalShiftSeconds * 0.20);
+  assert(shift.isRushActive === true, 'Rush period must be active at 50% shift time');
+
+  // Advance past rush window (75% of shift)
+  shift.update(shift.totalShiftSeconds * 0.25);
+  assert(shift.isRushActive === false, 'Rush period must deactivate after 70% shift time');
+});
+
 console.log('\n====================================================');
-console.log(`  RESULT: ${passedAssertions}/${totalAssertions} ASSERTIONS PASSED ACROSS 9 CATEGORIES`);
+console.log(`  RESULT: ${passedAssertions}/${totalAssertions} ASSERTIONS PASSED ACROSS 10 CATEGORIES`);
 console.log('====================================================\n');

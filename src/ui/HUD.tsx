@@ -27,27 +27,38 @@ export const HUD: React.FC<HUDProps> = ({ state, isPointerLocked, onRequestPoint
     <div className="absolute inset-0 pointer-events-none select-none flex flex-col justify-between p-4 overflow-hidden font-sans">
       {/* Top Header Bar: Stats on left, Orders in center */}
       <div className="flex items-start justify-between w-full max-w-7xl mx-auto gap-4">
-        {/* Left: Shift & Finances */}
-        <div className="flex items-center gap-3 bg-neutral-900/90 backdrop-blur-md px-4 py-2.5 rounded-xl border border-neutral-700/80 shadow-lg text-white">
-          <div className="flex flex-col">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-amber-400">
-              Shift #{state.currentShift}
-            </span>
-            <span className={`text-2xl font-black font-mono ${state.remainingShiftSeconds < 30 ? 'text-red-400 animate-pulse' : 'text-neutral-100'}`}>
-              ⏱ {formatTime(state.remainingShiftSeconds)}
-            </span>
+        {/* Left: Shift & Finances & Rush Banner */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3 bg-neutral-900/90 backdrop-blur-md px-4 py-2.5 rounded-xl border border-neutral-700/80 shadow-lg text-white">
+            <div className="flex flex-col">
+              <span className="text-[11px] font-bold tracking-wider uppercase text-amber-400">
+                Shift #{state.currentShift}
+              </span>
+              <span className={`text-2xl font-black font-mono ${state.remainingShiftSeconds < 30 ? 'text-red-400 animate-pulse' : 'text-neutral-100'}`}>
+                ⏱ {formatTime(state.remainingShiftSeconds)}
+              </span>
+            </div>
+
+            <div className="h-8 w-px bg-neutral-700 mx-1" />
+
+            <div className="flex flex-col">
+              <span className="text-[11px] font-bold tracking-wider uppercase text-emerald-400">
+                Cash Earned
+              </span>
+              <span className="text-2xl font-black text-emerald-300 font-mono">
+                ${state.cash.toFixed(2)}
+              </span>
+            </div>
           </div>
 
-          <div className="h-8 w-px bg-neutral-700 mx-1" />
-
-          <div className="flex flex-col">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-emerald-400">
-              Cash Earned
-            </span>
-            <span className="text-2xl font-black text-emerald-300 font-mono">
-              ${state.cash.toFixed(2)}
-            </span>
-          </div>
+          {/* Rush hour banner */}
+          {state.isRushActive && (
+            <div className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-amber-600 px-3 py-1.5 rounded-lg border border-yellow-300 text-white shadow-xl animate-pulse text-xs font-black tracking-wider uppercase">
+              <span>⚡</span>
+              <span>LUNCH RUSH HOUR (+80% Traffic)</span>
+              <span>⚡</span>
+            </div>
+          )}
         </div>
 
         {/* Center-Top: Active Order Tickets */}
@@ -67,33 +78,63 @@ export const HUD: React.FC<HUDProps> = ({ state, isPointerLocked, onRequestPoint
                   ? 'bg-amber-500'
                   : 'bg-red-500 animate-pulse';
 
+              const isCombo = (order.components && order.components.length > 1) || order.comboName;
+
               return (
                 <div
                   key={order.orderId}
-                  className="bg-neutral-900/95 backdrop-blur-md rounded-lg border border-amber-500/40 p-2.5 min-w-[170px] shadow-xl text-white flex flex-col gap-1.5 transition-all"
+                  className={`bg-neutral-900/95 backdrop-blur-md rounded-lg p-2.5 min-w-[190px] shadow-xl text-white flex flex-col gap-1.5 transition-all ${
+                    isCombo ? 'border-2 border-amber-400/80 shadow-amber-950/40' : 'border border-amber-500/40'
+                  }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 font-bold text-sm text-neutral-100">
                       <span>{order.recipeIcon}</span>
-                      <span className="truncate max-w-[105px]">{order.recipeName}</span>
+                      <span className="truncate max-w-[120px]">{order.comboName || order.recipeName}</span>
                     </div>
                     <span className="text-xs font-mono font-semibold text-emerald-400">
                       ${order.basePrice.toFixed(2)}
                     </span>
                   </div>
 
-                  {/* Ingredients Stack preview chips */}
-                  <div className="flex flex-wrap gap-1 text-[10px]">
-                    {order.requiredIngredients.map((ing, i) => (
-                      <span
-                        key={i}
-                        className="bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded border border-neutral-700/60"
-                      >
-                        {INGREDIENT_DEFINITIONS[ing]?.iconText || '•'}{' '}
-                        {INGREDIENT_DEFINITIONS[ing]?.name || ing}
-                      </span>
-                    ))}
-                  </div>
+                  {/* Components breakdown (for Combos) */}
+                  {order.components && order.components.length > 0 ? (
+                    <div className="flex flex-col gap-1">
+                      <div className="flex flex-wrap gap-1 text-[10px]">
+                        {order.components.map((comp, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-neutral-800/90 text-amber-200 px-1.5 py-0.5 rounded border border-amber-500/30 flex items-center gap-1 font-medium"
+                          >
+                            <span>{comp.icon}</span>
+                            <span>{comp.name}</span>
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Burger sub-ingredients */}
+                      <div className="flex flex-wrap gap-0.5 text-[9px] text-neutral-400">
+                        {order.requiredIngredients.map((ing, i) => (
+                          <span key={i} className="bg-neutral-800 px-1 py-0.2 rounded">
+                            {INGREDIENT_DEFINITIONS[ing]?.name || ing}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Single Recipe Ingredients Stack */
+                    <div className="flex flex-wrap gap-1 text-[10px]">
+                      {order.requiredIngredients.map((ing, i) => (
+                        <span
+                          key={i}
+                          className="bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded border border-neutral-700/60"
+                        >
+                          {INGREDIENT_DEFINITIONS[ing]?.iconText || '•'}{' '}
+                          {INGREDIENT_DEFINITIONS[ing]?.name || ing}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Patience progress bar */}
                   <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden mt-1">
@@ -152,8 +193,8 @@ export const HUD: React.FC<HUDProps> = ({ state, isPointerLocked, onRequestPoint
         <div className="bg-neutral-900/85 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-neutral-800 text-[11px] text-neutral-400 flex items-center gap-3">
           <span><strong className="text-neutral-200">WASD</strong> Move</span>
           <span><strong className="text-neutral-200">Shift</strong> Sprint</span>
-          <span><strong className="text-neutral-200">E</strong> Interact</span>
-          <span><strong className="text-neutral-200">RMB</strong> Board Clear</span>
+          <span><strong className="text-neutral-200">E</strong> Interact / Tray</span>
+          <span><strong className="text-neutral-200">RMB</strong> Tray Retrieve / Flip</span>
           <span><strong className="text-neutral-200">ESC</strong> Pause</span>
           <span><strong className="text-neutral-200">F3</strong> Debug</span>
         </div>

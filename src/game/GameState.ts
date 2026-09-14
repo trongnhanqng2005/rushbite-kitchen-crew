@@ -41,6 +41,7 @@ export class GameState {
   public currentPrompt: string = '';
   public secondaryPrompt?: string;
   public activeOrders: OrderSnapshot[] = [];
+  public isRushActive: boolean = false;
 
   public lastShiftResults: ShiftResultsData | null = null;
   public debugMetrics: DebugMetrics = {
