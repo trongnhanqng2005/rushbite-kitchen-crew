@@ -18,6 +18,8 @@ export interface FryerBasket {
 export class FryerStation extends CookingStation {
   public baskets: FryerBasket[] = [];
   public readonly maxBaskets = 2;
+  public isLocked: boolean = false;
+  public unlockShift: number = 2;
   private soundManager = SoundManager.getInstance();
 
   constructor(position: THREE.Vector3) {
@@ -41,6 +43,10 @@ export class FryerStation extends CookingStation {
     ];
 
     this.buildFryerMesh();
+  }
+
+  public setLocked(locked: boolean): void {
+    this.isLocked = locked;
   }
 
   private buildFryerMesh(): void {
@@ -143,7 +149,7 @@ export class FryerStation extends CookingStation {
       if (item !== null) {
         fn(item);
         // Visual basket position: immersed when frying, raised when ready or burnt
-        if (item.state === 'COOKED' || item.state === 'BURNT') {
+        if (item.state === 'READY' || item.state === 'BURNT') {
           this.baskets[i].basketGroup.position.y = 0.98; // Raised to drain oil
         } else {
           this.baskets[i].basketGroup.position.y = 0.84; // Submerged in hot oil
@@ -155,8 +161,11 @@ export class FryerStation extends CookingStation {
   }
 
   public canInteract(heldItem: FoodItem | null): boolean {
+    if (this.isLocked) return true;
+
     if (heldItem) {
-      if (heldItem.type === 'raw_fries' || heldItem.type === 'cooked_fries') {
+      // Only RAW fries can be placed into the fryer. Do not allow READY/cooked or burnt fries to be refried!
+      if (heldItem.type === 'raw_fries' && heldItem.state === 'RAW') {
         for (let i = 0; i < this.baskets.length; i++) {
           if (this.baskets[i].item === null) return true;
         }
@@ -171,12 +180,18 @@ export class FryerStation extends CookingStation {
   }
 
   public interact(heldItem: FoodItem | null): FoodItem | null {
+    if (this.isLocked) {
+      this.soundManager.playError();
+      return heldItem;
+    }
+
     if (heldItem) {
-      if (heldItem.type === 'raw_fries' || heldItem.type === 'cooked_fries') {
+      // Only accept RAW fries
+      if (heldItem.type === 'raw_fries' && heldItem.state === 'RAW') {
         const emptyBasket = this.baskets.find((b) => b.item === null);
         if (emptyBasket) {
           emptyBasket.item = heldItem;
-          heldItem.state = 'COOKING';
+          heldItem.state = 'FRYING';
           heldItem.mesh.position.set(0, 0.08, 0);
           emptyBasket.basketGroup.add(heldItem.mesh);
           emptyBasket.basketGroup.position.y = 0.84; // Submerge
@@ -189,7 +204,7 @@ export class FryerStation extends CookingStation {
       return heldItem;
     }
 
-    // Pick up: prioritize cooked/ready fries, then burnt, then raw
+    // Pick up: prioritize READY fries, then BURNT, then FRYING
     let targetBasket: FryerBasket | null = null;
     let fallbackBasket: FryerBasket | null = null;
 
@@ -197,10 +212,10 @@ export class FryerStation extends CookingStation {
       const b = this.baskets[i];
       if (b.item) {
         if (!fallbackBasket) fallbackBasket = b;
-        if (b.item.state === 'COOKED') {
+        if (b.item.state === 'READY') {
           targetBasket = b;
           break;
-        } else if (b.item.state === 'BURNT' && (!targetBasket || targetBasket.item?.state !== 'COOKED')) {
+        } else if (b.item.state === 'BURNT' && (!targetBasket || targetBasket.item?.state !== 'READY')) {
           targetBasket = b;
         }
       }
@@ -241,21 +256,28 @@ export class FryerStation extends CookingStation {
   }
 
   public getInteractionLabel(heldItem: FoodItem | null): string {
+    if (this.isLocked) {
+      return `Unlocks on Shift ${this.unlockShift}`;
+    }
+
     if (heldItem) {
-      if (heldItem.type === 'raw_fries' || heldItem.type === 'cooked_fries') {
+      if (heldItem.type === 'raw_fries' && heldItem.state === 'RAW') {
         const hasBasket = this.baskets.some((b) => b.item === null);
         return hasBasket ? '[E] Lower Fries into Fryer Basket' : 'Fryer Baskets Full (2/2)';
       }
-      return 'Fryer only accepts fries';
+      if (heldItem.type === 'cooked_fries' || heldItem.state === 'READY') {
+        return 'Cannot re-fry cooked fries';
+      }
+      return 'Fryer only accepts raw fries';
     }
 
     const occupied = this.baskets.filter((b) => b.item !== null);
     if (occupied.length === 0) return 'Fryer Baskets Empty';
 
-    const cooked = occupied.filter((b) => b.item?.state === 'COOKED').length;
+    const ready = occupied.filter((b) => b.item?.state === 'READY').length;
     const burnt = occupied.filter((b) => b.item?.state === 'BURNT').length;
 
-    if (cooked > 0) return `[E] Pick Up Crispy Fries (${cooked} ready)`;
+    if (ready > 0) return `[E] Pick Up Crispy Fries (${ready} ready)`;
     if (burnt > 0) return `[E] Pick Up Burnt Fries (${burnt} burnt)`;
     return `[E] Pick Up Frying Basket (${occupied.length} frying)`;
   }

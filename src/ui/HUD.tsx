@@ -52,10 +52,17 @@ export const HUD: React.FC<HUDProps> = ({ state, isPointerLocked, onRequestPoint
           </div>
 
           {/* Rush hour banner */}
-          {state.isRushActive && (
+          {state.rushState === 'RUSH_WARNING' && (
+            <div className="flex items-center gap-2 bg-amber-500/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-amber-300 text-neutral-950 shadow-xl animate-pulse text-xs font-black tracking-wider uppercase">
+              <span>⚠️</span>
+              <span>RUSH INCOMING</span>
+              <span>⚠️</span>
+            </div>
+          )}
+          {state.rushState === 'RUSH_ACTIVE' && (
             <div className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-amber-600 px-3 py-1.5 rounded-lg border border-yellow-300 text-white shadow-xl animate-pulse text-xs font-black tracking-wider uppercase">
               <span>⚡</span>
-              <span>LUNCH RUSH HOUR (+80% Traffic)</span>
+              <span>RUSH!</span>
               <span>⚡</span>
             </div>
           )}

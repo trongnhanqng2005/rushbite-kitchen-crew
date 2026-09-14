@@ -64,8 +64,10 @@ export class FoodItem {
   constructor(type: FoodItemType, stacked?: FoodItemType[]) {
     this.id = 'food_' + Math.random().toString(36).substring(2, 9);
     this.type = type;
-    if (type === 'cooked_patty' || type === 'cooked_fries') {
+    if (type === 'cooked_patty') {
       this.state = 'COOKED';
+    } else if (type === 'cooked_fries') {
+      this.state = 'READY';
     } else if (type === 'burnt_patty' || type === 'burnt_fries') {
       this.state = 'BURNT';
     } else if (type === 'assembled_burger') {
@@ -107,10 +109,10 @@ export class FoodItem {
         this.state = 'BURNT';
         this.type = 'burnt_fries';
       } else if (this.cookProgress >= GameConfig.cooking.cookedMinProgress) {
-        this.state = 'COOKED';
+        this.state = 'READY';
         this.type = 'cooked_fries';
       } else {
-        this.state = 'COOKING';
+        this.state = 'FRYING';
       }
 
       this.updateFriesVisuals();

@@ -106,7 +106,7 @@ export class OrderSystem {
         feedback: evalResult.feedback,
       };
     } else {
-      this.eventBus.emit('ORDER_FAILED', {
+      this.eventBus.emit('ORDER_REJECTED', {
         order: order.toSnapshot(),
         accuracy: evalResult.accuracy,
         feedback: evalResult.feedback,

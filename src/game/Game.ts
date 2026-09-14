@@ -248,9 +248,8 @@ export class Game {
             }
           } else {
             this.soundManager.playError();
-            this.economySystem.registerFailedOrder();
-            this.shiftSystem.recordFailedOrder();
-            this.state.cash = this.economySystem.cash;
+            // Reject tray: provide feedback, keep order active for player to fix, do NOT increment failedOrders or stack penalties
+            this.state.currentPrompt = result.feedback;
             this.state.activeOrders = this.orderSystem.getSnapshots();
           }
         }
@@ -280,6 +279,9 @@ export class Game {
     this.soundManager.init();
     this.difficultySystem.applyShiftDifficulty(this.state.currentShift);
 
+    // Update station availability for current shift without rebuilding RestaurantWorld
+    this.restaurantWorld.updateStationAvailability(this.state.currentShift);
+
     this.shiftSystem.startShift();
     this.economySystem.resetShift();
     this.customerSystem.clear();
@@ -297,6 +299,7 @@ export class Game {
     this.state.totalShiftSeconds = this.shiftSystem.totalShiftSeconds;
     this.state.activeOrders = [];
     this.state.isRushActive = false;
+    this.state.rushState = 'NORMAL';
 
     this.gameLoop.start();
     this.player.requestPointerLock();
@@ -393,6 +396,7 @@ export class Game {
     this.shiftSystem.update(dt);
     this.state.remainingShiftSeconds = Math.max(0, Math.ceil(this.shiftSystem.remainingSeconds));
     this.state.isRushActive = this.shiftSystem.isRushActive;
+    this.state.rushState = this.shiftSystem.rushState;
 
     // Check if shift reached time limit
     if (this.shiftSystem.isExpired()) {

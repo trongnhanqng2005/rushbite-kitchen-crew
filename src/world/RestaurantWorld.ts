@@ -305,6 +305,22 @@ export class RestaurantWorld {
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(registerPos.x, 0.45, registerPos.z), new THREE.Vector3(1.7, 0.95, 1.0), 'RegisterStation');
   }
 
+  public updateStationAvailability(shiftNumber: number): void {
+    // Shift 1: Burgers only (Fryer and Drink locked)
+    // Shift 2: Add fries (Fryer unlocked, Drink locked)
+    // Shift 3+: Add drinks (Fryer and Drink unlocked)
+    if (this.fryerStation) {
+      this.fryerStation.setLocked(shiftNumber < 2);
+    }
+    const friesCrate = this.crateStations.find((c) => c.ingredientType === 'raw_fries');
+    if (friesCrate) {
+      friesCrate.setLocked(shiftNumber < 2, 2);
+    }
+    if (this.drinkStation) {
+      this.drinkStation.setLocked(shiftNumber < 3);
+    }
+  }
+
   public dispose(): void {
     if (this.grillStation) this.grillStation.dispose();
     if (this.fryerStation) this.fryerStation.dispose();

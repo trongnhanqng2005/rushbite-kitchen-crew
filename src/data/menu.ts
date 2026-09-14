@@ -218,7 +218,7 @@ export function evaluateOrderComponents(
     };
   }
 
-  // Check for burnt items
+  // 1. Check for any burnt items in the delivered array
   const hasBurnt = deliveredItems.some(
     (item) => item.state === 'BURNT' || item.type === 'burnt_patty' || item.type === 'burnt_fries'
   );
@@ -226,23 +226,31 @@ export function evaluateOrderComponents(
     return {
       matches: false,
       accuracy: 0.1,
-      feedback: 'Order rejected: Contains burnt food!',
+      feedback: 'Burnt food cannot be served.',
     };
   }
 
-  // Check for raw fries
-  const hasRawFries = deliveredItems.some((item) => item.type === 'raw_fries');
-  if (hasRawFries) {
+  // 2. Check for any raw / undercooked / frying items in the delivered array
+  const hasRawOrCooking = deliveredItems.some(
+    (item) =>
+      item.state === 'RAW' ||
+      item.state === 'COOKING' ||
+      item.state === 'FRYING' ||
+      item.type === 'raw_patty' ||
+      item.type === 'raw_fries'
+  );
+  if (hasRawOrCooking) {
     return {
       matches: false,
       accuracy: 0.1,
-      feedback: 'Order rejected: Fries are still raw!',
+      feedback: 'Raw food cannot be served.',
     };
   }
 
   const remainingDelivered = [...deliveredItems];
   const accuracies: number[] = [];
 
+  // 3. Match each required component data-driven from combo.components
   for (const component of combo.components) {
     if (component.type === 'burger') {
       const idx = remainingDelivered.findIndex((item) => item.type === 'assembled_burger');
@@ -268,7 +276,9 @@ export function evaluateOrderComponents(
       }
       accuracies.push(result.accuracy);
     } else if (component.type === 'fries') {
-      const idx = remainingDelivered.findIndex((item) => item.type === 'cooked_fries');
+      const idx = remainingDelivered.findIndex(
+        (item) => item.type === 'cooked_fries' && (item.state === 'READY' || item.state === 'COOKED')
+      );
       if (idx === -1) {
         return {
           matches: false,
@@ -282,14 +292,13 @@ export function evaluateOrderComponents(
     } else if (component.type === 'drink') {
       const idx = remainingDelivered.findIndex((item) => item.type === component.drinkType);
       if (idx === -1) {
-        // Check if a wrong drink was delivered
+        // Check if player provided a wrong drink
         const wrongDrinkIdx = remainingDelivered.findIndex((item) => item.type.startsWith('drink_'));
         if (wrongDrinkIdx !== -1) {
-          const wrongItem = remainingDelivered[wrongDrinkIdx];
           return {
             matches: false,
             accuracy: 0.2,
-            feedback: `Wrong drink! Customer ordered ${component.name}.`,
+            feedback: `Wrong drink — customer ordered ${component.name}.`,
             wrongComponent: 'drink',
           };
         }
@@ -305,13 +314,12 @@ export function evaluateOrderComponents(
     }
   }
 
-  // If there are unexpected extra items, small penalty but allow
+  // 4. Strict check for unexpected extra items
   if (remainingDelivered.length > 0) {
-    const avgAccuracy = accuracies.reduce((a, b) => a + b, 0) / accuracies.length;
     return {
-      matches: true,
-      accuracy: Math.max(0.7, avgAccuracy - remainingDelivered.length * 0.1),
-      feedback: 'Order complete with extra items.',
+      matches: false,
+      accuracy: 0.2,
+      feedback: 'Remove the extra item from the tray.',
     };
   }
 

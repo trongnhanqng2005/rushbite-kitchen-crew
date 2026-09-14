@@ -13,6 +13,8 @@ export class IngredientCrateStation implements Interactable {
   public mesh: THREE.Group;
   public position: THREE.Vector3;
   public ingredientType: FoodItemType;
+  public isLocked: boolean = false;
+  public unlockShift: number = 1;
 
   private soundManager = SoundManager.getInstance();
 
@@ -24,6 +26,11 @@ export class IngredientCrateStation implements Interactable {
     this.mesh.position.copy(position);
 
     this.buildCrateMesh();
+  }
+
+  public setLocked(locked: boolean, unlockShift: number = 2): void {
+    this.isLocked = locked;
+    this.unlockShift = unlockShift;
   }
 
   public getInteractionPosition(): THREE.Vector3 {
@@ -64,6 +71,7 @@ export class IngredientCrateStation implements Interactable {
   }
 
   public canInteract(heldItem: FoodItem | null): boolean {
+    if (this.isLocked) return true;
     if (heldItem) {
       // Can put back matching item if holding same type
       return heldItem.type === this.ingredientType;
@@ -73,6 +81,11 @@ export class IngredientCrateStation implements Interactable {
   }
 
   public interact(heldItem: FoodItem | null): FoodItem | null {
+    if (this.isLocked) {
+      this.soundManager.playError();
+      return heldItem;
+    }
+
     if (heldItem) {
       if (heldItem.type === this.ingredientType) {
         heldItem.dispose();
@@ -89,6 +102,9 @@ export class IngredientCrateStation implements Interactable {
   }
 
   public getInteractionLabel(heldItem: FoodItem | null): string {
+    if (this.isLocked) {
+      return `Unlocks on Shift ${this.unlockShift}`;
+    }
     const def = INGREDIENT_DEFINITIONS[this.ingredientType];
     if (heldItem) {
       if (heldItem.type === this.ingredientType) {

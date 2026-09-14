@@ -28,6 +28,8 @@ const FLAVORS: FlavorInfo[] = [
 export class DrinkStation implements Interactable {
   public mesh: THREE.Group;
   public position: THREE.Vector3;
+  public isLocked: boolean = false;
+  public unlockShift: number = 3;
   private selectedFlavorIndex: number = 0;
   private soundManager = SoundManager.getInstance();
   private indicatorLightMat?: THREE.MeshStandardMaterial;
@@ -38,6 +40,10 @@ export class DrinkStation implements Interactable {
     this.mesh.position.copy(position);
 
     this.buildDispenserMesh();
+  }
+
+  public setLocked(locked: boolean): void {
+    this.isLocked = locked;
   }
 
   private buildDispenserMesh(): void {
@@ -162,11 +168,17 @@ export class DrinkStation implements Interactable {
   }
 
   public canInteract(heldItem: FoodItem | null): boolean {
+    if (this.isLocked) return true;
     // Can fill drink when hands are empty
     return heldItem === null;
   }
 
   public interact(heldItem: FoodItem | null): FoodItem | null {
+    if (this.isLocked) {
+      this.soundManager.playError();
+      return heldItem;
+    }
+
     if (heldItem) return heldItem; // Hands full
 
     // Dispense currently selected drink
@@ -176,18 +188,23 @@ export class DrinkStation implements Interactable {
   }
 
   public secondaryInteract(heldItem: FoodItem | null): FoodItem | null {
+    if (this.isLocked) return heldItem;
     // Cycle to next flavor
     this.nextFlavor();
     return heldItem;
   }
 
   public getSecondaryLabel(_heldItem: FoodItem | null): string | undefined {
+    if (this.isLocked) return undefined;
     const nextIdx = (this.selectedFlavorIndex + 1) % FLAVORS.length;
     const nextFlav = FLAVORS[nextIdx];
     return `[RMB] Switch to ${nextFlav.name}`;
   }
 
   public getInteractionLabel(heldItem: FoodItem | null): string {
+    if (this.isLocked) {
+      return `Unlocks on Shift ${this.unlockShift}`;
+    }
     if (heldItem) {
       return `Hands full (Holding ${heldItem.type.replace('_', ' ')})`;
     }

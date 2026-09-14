@@ -42,6 +42,7 @@ export class GameState {
   public secondaryPrompt?: string;
   public activeOrders: OrderSnapshot[] = [];
   public isRushActive: boolean = false;
+  public rushState: 'NORMAL' | 'RUSH_WARNING' | 'RUSH_ACTIVE' | 'RECOVERY' = 'NORMAL';
 
   public lastShiftResults: ShiftResultsData | null = null;
   public debugMetrics: DebugMetrics = {

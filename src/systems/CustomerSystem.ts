@@ -45,17 +45,24 @@ export class CustomerSystem {
       })
     );
 
-    // Rush hour speedup & warning
+    // Rush warning: sound alarm before traffic increases
     this.unsubscribers.push(
-      this.eventBus.on('RUSH_PERIOD_STARTED', () => {
-        this.spawnRateMultiplier *= 1.8;
+      this.eventBus.on('RUSH_WARNING_STARTED', () => {
         this.soundManager.playRushWarning();
       })
     );
 
+    // Rush hour speedup: increase spawn pressure only during active rush
+    this.unsubscribers.push(
+      this.eventBus.on('RUSH_PERIOD_STARTED', () => {
+        this.spawnRateMultiplier = 1.8;
+      })
+    );
+
+    // Rush hour recovery: restore normal customer spawn rate
     this.unsubscribers.push(
       this.eventBus.on('RUSH_PERIOD_ENDED', () => {
-        this.spawnRateMultiplier /= 1.8;
+        this.spawnRateMultiplier = 1.0;
       })
     );
   }

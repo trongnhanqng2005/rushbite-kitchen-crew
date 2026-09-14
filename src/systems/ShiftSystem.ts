@@ -6,6 +6,7 @@ import { GameConfig } from '../game/GameConfig.ts';
 import { EventBus } from '../core/EventBus.ts';
 
 export type ShiftPhase = 'PRE_SHIFT' | 'ACTIVE' | 'ENDED';
+export type RushState = 'NORMAL' | 'RUSH_WARNING' | 'RUSH_ACTIVE' | 'RECOVERY';
 
 export interface ShiftResultsData {
   shiftNumber: number;
@@ -33,10 +34,12 @@ export class ShiftSystem {
   public elapsedSimulationTime: number = 0;
   public lastResults: ShiftResultsData | null = null;
 
-  // Rush Period Tracking
+  // Rush Period Tracking: NORMAL -> RUSH_WARNING -> RUSH_ACTIVE -> RECOVERY
+  public rushState: RushState = 'NORMAL';
   public isRushActive: boolean = false;
-  private rushAnnounced: boolean = false;
-  private rushEndedAnnounced: boolean = false;
+  private warningFired: boolean = false;
+  private rushStartFired: boolean = false;
+  private rushEndFired: boolean = false;
 
   private eventBus = EventBus.getInstance();
 
@@ -54,9 +57,12 @@ export class ShiftSystem {
     this.bestOrderTime = 999;
     this.elapsedSimulationTime = 0;
     this.lastResults = null;
+
+    this.rushState = 'NORMAL';
     this.isRushActive = false;
-    this.rushAnnounced = false;
-    this.rushEndedAnnounced = false;
+    this.warningFired = false;
+    this.rushStartFired = false;
+    this.rushEndFired = false;
 
     this.eventBus.emit('SHIFT_STARTED', { shiftNumber: this.shiftNumber });
   }
@@ -70,25 +76,45 @@ export class ShiftSystem {
       this.remainingSeconds = 0;
     }
 
-    // Deterministic Rush Period (starts at 35% of shift, ends at 70%)
+    // Deterministic Rush Lifecycle:
+    // NORMAL: 0% to 30%
+    // RUSH_WARNING: 30% to 35%
+    // RUSH_ACTIVE: 35% to 70%
+    // RECOVERY / NORMAL: 70% to 100%
+    const warningStart = this.totalShiftSeconds * 0.30;
     const rushStart = this.totalShiftSeconds * 0.35;
     const rushEnd = this.totalShiftSeconds * 0.70;
 
-    if (this.elapsedSimulationTime >= rushStart && this.elapsedSimulationTime < rushEnd) {
-      if (!this.rushAnnounced) {
-        this.isRushActive = true;
-        this.rushAnnounced = true;
+    if (this.elapsedSimulationTime >= rushEnd) {
+      this.rushState = 'RECOVERY';
+      this.isRushActive = false;
+      if (!this.rushEndFired) {
+        this.rushEndFired = true;
+        this.eventBus.emit('RUSH_PERIOD_ENDED', {});
+      }
+    } else if (this.elapsedSimulationTime >= rushStart) {
+      this.rushState = 'RUSH_ACTIVE';
+      this.isRushActive = true;
+      if (!this.rushStartFired) {
+        this.rushStartFired = true;
         this.eventBus.emit('RUSH_PERIOD_STARTED', {
           duration: rushEnd - rushStart,
           remaining: rushEnd - this.elapsedSimulationTime,
         });
       }
-    } else if (this.elapsedSimulationTime >= rushEnd) {
-      if (this.isRushActive) {
-        this.isRushActive = false;
-        this.rushEndedAnnounced = true;
-        this.eventBus.emit('RUSH_PERIOD_ENDED', {});
+    } else if (this.elapsedSimulationTime >= warningStart) {
+      this.rushState = 'RUSH_WARNING';
+      this.isRushActive = false;
+      if (!this.warningFired) {
+        this.warningFired = true;
+        this.eventBus.emit('RUSH_WARNING_STARTED', {
+          warningDuration: rushStart - warningStart,
+          timeToRush: rushStart - this.elapsedSimulationTime,
+        });
       }
+    } else {
+      this.rushState = 'NORMAL';
+      this.isRushActive = false;
     }
   }
 
