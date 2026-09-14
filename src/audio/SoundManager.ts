@@ -13,6 +13,7 @@ export class SoundManager {
   private sfxGain: GainNode | null = null;
   private sizzleNode: AudioBufferSourceNode | null = null;
   private sizzleGain: GainNode | null = null;
+  private sizzleStopTimeout: ReturnType<typeof setTimeout> | null = null;
   private isInitialized = false;
 
   public static getInstance(): SoundManager {
@@ -228,6 +229,10 @@ export class SoundManager {
 
   public startGrillSizzle(): void {
     if (!this.ctx || !this.sfxGain || this.sizzleNode) return;
+    if (this.sizzleStopTimeout !== null) {
+      clearTimeout(this.sizzleStopTimeout);
+      this.sizzleStopTimeout = null;
+    }
     try {
       const bufferSize = this.ctx.sampleRate * 2;
       const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -266,10 +271,15 @@ export class SoundManager {
   }
 
   public stopGrillSizzle(): void {
+    if (this.sizzleStopTimeout !== null) {
+      clearTimeout(this.sizzleStopTimeout);
+      this.sizzleStopTimeout = null;
+    }
     if (this.sizzleGain && this.ctx) {
       this.sizzleGain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
     }
-    setTimeout(() => {
+    this.sizzleStopTimeout = setTimeout(() => {
+      this.sizzleStopTimeout = null;
       if (this.sizzleNode) {
         try {
           this.sizzleNode.stop();
@@ -279,5 +289,20 @@ export class SoundManager {
         this.sizzleGain = null;
       }
     }, 250);
+  }
+
+  public dispose(): void {
+    if (this.sizzleStopTimeout !== null) {
+      clearTimeout(this.sizzleStopTimeout);
+      this.sizzleStopTimeout = null;
+    }
+    if (this.sizzleNode) {
+      try {
+        this.sizzleNode.stop();
+        this.sizzleNode.disconnect();
+      } catch (_) {}
+      this.sizzleNode = null;
+      this.sizzleGain = null;
+    }
   }
 }

@@ -30,7 +30,8 @@ export class ShiftSystem {
   public ordersFailed: number = 0;
   public satisfactionScores: number[] = [];
   public bestOrderTime: number = 999;
-  public shiftStartTime: number = 0;
+  public elapsedSimulationTime: number = 0;
+  public lastResults: ShiftResultsData | null = null;
 
   private eventBus = EventBus.getInstance();
 
@@ -46,7 +47,8 @@ export class ShiftSystem {
     this.ordersFailed = 0;
     this.satisfactionScores = [];
     this.bestOrderTime = 999;
-    this.shiftStartTime = performance.now() * 0.001;
+    this.elapsedSimulationTime = 0;
+    this.lastResults = null;
 
     this.eventBus.emit('SHIFT_STARTED', { shiftNumber: this.shiftNumber });
   }
@@ -55,10 +57,14 @@ export class ShiftSystem {
     if (this.phase !== 'ACTIVE') return;
 
     this.remainingSeconds -= dt;
+    this.elapsedSimulationTime += dt;
     if (this.remainingSeconds <= 0) {
       this.remainingSeconds = 0;
-      this.endShift();
     }
+  }
+
+  public isExpired(): boolean {
+    return this.phase === 'ACTIVE' && this.remainingSeconds <= 0;
   }
 
   public recordCompletedOrder(orderDurationSeconds: number, satisfaction: number): void {
@@ -75,6 +81,9 @@ export class ShiftSystem {
   }
 
   public endShift(revenue: number = 0, tips: number = 0): ShiftResultsData {
+    if (this.phase === 'ENDED' && this.lastResults) {
+      return this.lastResults;
+    }
     this.phase = 'ENDED';
 
     const avgSat = this.satisfactionScores.length > 0
@@ -106,6 +115,7 @@ export class ShiftSystem {
       ratingGrade,
     };
 
+    this.lastResults = results;
     this.eventBus.emit('SHIFT_ENDED', results);
     return results;
   }

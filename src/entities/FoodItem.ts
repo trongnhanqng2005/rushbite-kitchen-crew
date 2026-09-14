@@ -11,10 +11,17 @@ import { GameConfig } from '../game/GameConfig.ts';
 const cylinderGeometries = new Map<string, THREE.CylinderGeometry>();
 const boxGeometries = new Map<string, THREE.BoxGeometry>();
 
+// Cached color instances to prevent hot-loop allocations during cooking updates
+const COLOR_RAW_PATTY = new THREE.Color(INGREDIENT_DEFINITIONS.raw_patty.color);
+const COLOR_COOKED_PATTY = new THREE.Color(INGREDIENT_DEFINITIONS.cooked_patty.color);
+const COLOR_BURNT_PATTY = new THREE.Color(INGREDIENT_DEFINITIONS.burnt_patty.color);
+
 function getSharedCylinder(radius: number, height: number): THREE.CylinderGeometry {
   const key = `${radius.toFixed(2)}_${height.toFixed(2)}`;
   if (!cylinderGeometries.has(key)) {
-    cylinderGeometries.set(key, new THREE.CylinderGeometry(radius, radius, height, 16));
+    const geom = new THREE.CylinderGeometry(radius, radius, height, 16);
+    geom.userData = { isShared: true };
+    cylinderGeometries.set(key, geom);
   }
   return cylinderGeometries.get(key)!;
 }
@@ -22,7 +29,9 @@ function getSharedCylinder(radius: number, height: number): THREE.CylinderGeomet
 function getSharedBox(w: number, h: number, d: number): THREE.BoxGeometry {
   const key = `${w.toFixed(2)}_${h.toFixed(2)}_${d.toFixed(2)}`;
   if (!boxGeometries.has(key)) {
-    boxGeometries.set(key, new THREE.BoxGeometry(w, h, d));
+    const geom = new THREE.BoxGeometry(w, h, d);
+    geom.userData = { isShared: true };
+    boxGeometries.set(key, geom);
   }
   return boxGeometries.get(key)!;
 }
@@ -30,7 +39,9 @@ function getSharedBox(w: number, h: number, d: number): THREE.BoxGeometry {
 function getSharedTaperedCylinder(topRadius: number, botRadius: number, height: number): THREE.CylinderGeometry {
   const key = `${topRadius.toFixed(2)}_${botRadius.toFixed(2)}_${height.toFixed(2)}`;
   if (!cylinderGeometries.has(key)) {
-    cylinderGeometries.set(key, new THREE.CylinderGeometry(topRadius, botRadius, height, 16));
+    const geom = new THREE.CylinderGeometry(topRadius, botRadius, height, 16);
+    geom.userData = { isShared: true };
+    cylinderGeometries.set(key, geom);
   }
   return cylinderGeometries.get(key)!;
 }
@@ -81,20 +92,16 @@ export class FoodItem {
     if (!this.primaryMaterial) return;
 
     // Smooth visual transition from raw red -> cooked savory brown -> charred black
-    const rawCol = new THREE.Color(INGREDIENT_DEFINITIONS.raw_patty.color);
-    const cookedCol = new THREE.Color(INGREDIENT_DEFINITIONS.cooked_patty.color);
-    const burntCol = new THREE.Color(INGREDIENT_DEFINITIONS.burnt_patty.color);
-
     if (this.cookProgress < GameConfig.cooking.cookedMinProgress) {
       const t = this.cookProgress / GameConfig.cooking.cookedMinProgress;
-      this.primaryMaterial.color.copy(rawCol).lerp(cookedCol, t);
+      this.primaryMaterial.color.copy(COLOR_RAW_PATTY).lerp(COLOR_COOKED_PATTY, t);
       this.primaryMaterial.roughness = 0.6 + t * 0.2;
     } else if (this.cookProgress <= GameConfig.cooking.burntThreshold) {
       const t = (this.cookProgress - GameConfig.cooking.cookedMinProgress) / (GameConfig.cooking.burntThreshold - GameConfig.cooking.cookedMinProgress);
-      this.primaryMaterial.color.copy(cookedCol).lerp(burntCol, t);
+      this.primaryMaterial.color.copy(COLOR_COOKED_PATTY).lerp(COLOR_BURNT_PATTY, t);
       this.primaryMaterial.roughness = 0.8 + t * 0.2;
     } else {
-      this.primaryMaterial.color.copy(burntCol);
+      this.primaryMaterial.color.copy(COLOR_BURNT_PATTY);
       this.primaryMaterial.roughness = 1.0;
     }
   }

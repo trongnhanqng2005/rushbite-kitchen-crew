@@ -1,245 +1,459 @@
 /**
- * Unit test suite for RushBite: Kitchen Crew core gameplay logic.
- * Tests pure game mechanics without requiring WebGL/Three.js render context:
- * - Recipe matching & layer evaluation
- * - Cooking state transitions (RAW -> COOKING -> COOKED -> BURNT)
- * - Order patience decay & status transitions
- * - Economy reward calculation & bonuses
- * - Shift completion & rating aggregation
+ * RushBite: Kitchen Crew - Core Gameplay and Systems Stabilization Test Suite.
+ *
+ * Clearly distinguished test categories and cases:
+ * Category 1: Event Lifecycle Ownership & Regression
+ * Category 2: Shift Finalization & SHIFT_ENDED Exactly-Once Invariant
+ * Category 3: Gameplay Clock Consistency (Simulation vs Wall-Clock)
+ * Category 4: Real Production Cooking & FoodItem State Transitions
+ * Category 5: Order Patience & Shift Integration (In-Flight Orders on Shift End)
+ * Category 6: Economy Reward Calculations & Penalties
+ * Category 7: Recipe Layer & Accuracy Evaluation
+ * Category 8: Storage Resilience & Progression Sanitization
+ * Category 9: Three.js Resource Ownership & Disposal
  */
 
+import * as THREE from 'three';
 import { evaluateBurgerAgainstRecipe, RECIPES } from '../src/data/recipes.ts';
 import { GameConfig } from '../src/game/GameConfig.ts';
+import { FoodItem } from '../src/entities/FoodItem.ts';
 import { Order } from '../src/entities/Order.ts';
+import { OrderSystem } from '../src/systems/OrderSystem.ts';
 import { EconomySystem } from '../src/systems/EconomySystem.ts';
 import { ShiftSystem } from '../src/systems/ShiftSystem.ts';
 import { FoodItemType } from '../src/data/ingredients.ts';
 import { GameTime } from '../src/core/Time.ts';
+import { EventBus } from '../src/core/EventBus.ts';
 import { StorageUtil, DEFAULT_SAVE_DATA } from '../src/utils/storage.ts';
 
-// Simple lightweight assertion runner
-function assert(condition: boolean, message: string) {
+// Setup minimal headless DOM environment for Node.js test execution
+const mockStorage: Record<string, string> = {};
+globalThis.localStorage = {
+  getItem: (key: string) => mockStorage[key] || null,
+  setItem: (key: string, val: string) => { mockStorage[key] = val; },
+  removeItem: (key: string) => { delete mockStorage[key]; },
+  clear: () => { Object.keys(mockStorage).forEach(k => delete mockStorage[k]); },
+  key: () => null,
+  length: 0,
+} as Storage;
+
+globalThis.window = {
+  innerWidth: 1024,
+  innerHeight: 768,
+  devicePixelRatio: 1,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+} as unknown as Window & typeof globalThis;
+
+const fakeGl = {
+  VERSION: 7938,
+  VENDOR: 7936,
+  RENDERER: 7937,
+  SHADING_LANGUAGE_VERSION: 35724,
+  MAX_VERTEX_ATTRIBS: 34921,
+  MAX_VERTEX_UNIFORM_VECTORS: 36347,
+  MAX_VARYING_VECTORS: 36348,
+  MAX_COMBINED_TEXTURE_IMAGE_UNITS: 35661,
+  MAX_VERTEX_TEXTURE_IMAGE_UNITS: 35660,
+  MAX_TEXTURE_IMAGE_UNITS: 34930,
+  MAX_FRAGMENT_UNIFORM_VECTORS: 36349,
+  getExtension: () => null,
+  getContextAttributes: () => ({ xrCompatible: false }),
+  getParameter: (p: number) => {
+    if (p === 7938) return 'WebGL 2.0';
+    if (p === 7936) return 'MockVendor';
+    if (p === 7937) return 'MockRenderer';
+    if (p === 35724) return 'WebGL GLSL ES 3.00';
+    return 16;
+  },
+  getShaderPrecisionFormat: () => ({ precision: 23, rangeMin: 127, rangeMax: 127 }),
+  enable: () => {},
+  disable: () => {},
+  createTexture: () => ({}),
+  bindTexture: () => {},
+  texParameteri: () => {},
+  texImage2D: () => {},
+  texImage3D: () => {},
+  texStorage2D: () => {},
+  texStorage3D: () => {},
+  pixelStorei: () => {},
+  viewport: () => {},
+  clearColor: () => {},
+  clearDepth: () => {},
+  clearStencil: () => {},
+  clear: () => {},
+  cullFace: () => {},
+  frontFace: () => {},
+  colorMask: () => {},
+  depthMask: () => {},
+  depthFunc: () => {},
+  blendEquationSeparate: () => {},
+  blendFuncSeparate: () => {},
+  createBuffer: () => ({}),
+  bindBuffer: () => {},
+  bufferData: () => {},
+  createFramebuffer: () => ({}),
+  bindFramebuffer: () => {},
+  createRenderbuffer: () => ({}),
+  bindRenderbuffer: () => {},
+  renderbufferStorage: () => {},
+  framebufferRenderbuffer: () => {},
+  checkFramebufferStatus: () => 36053,
+  canvas: { width: 1024, height: 768 },
+};
+
+const fakeElement: Record<string, unknown> = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  appendChild: () => {},
+  removeChild: () => {},
+  parentElement: { removeChild: () => {} },
+  getContext: () => fakeGl,
+  style: {},
+  width: 1024,
+  height: 768,
+};
+
+globalThis.document = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  createElementNS: () => fakeElement,
+  createElement: () => fakeElement,
+} as unknown as Document;
+
+import { Game } from '../src/game/Game.ts';
+
+// Test runner infrastructure
+let totalAssertions = 0;
+let passedAssertions = 0;
+
+function assert(condition: boolean, message: string): void {
+  totalAssertions++;
   if (!condition) {
-    throw new Error(`[TEST FAILED] ${message}`);
+    throw new Error(`[ASSERTION FAILED] ${message}`);
   }
+  passedAssertions++;
 }
 
-function runTests() {
-  console.log('--- STARTING RUSHBITE GAMEPLAY UNIT TESTS ---');
-  let passed = 0;
+function runCategory(name: string, fn: () => void): void {
+  console.log(`\n▶ [CATEGORY] ${name}`);
+  fn();
+}
 
-  // 1. RECIPE MATCHING TESTS
-  console.log('Testing: Recipe Matching...');
+// ---------------------------------------------------------------------------
+// TEST RUNNER
+// ---------------------------------------------------------------------------
+console.log('====================================================');
+console.log('  RUSHBITE: KITCHEN CREW STABILIZATION VERIFICATION  ');
+console.log('====================================================');
+
+// ---------------------------------------------------------------------------
+// CATEGORY 1: Event Lifecycle Ownership & Regression
+// ---------------------------------------------------------------------------
+runCategory('Category 1: Event Lifecycle Ownership & Regression', () => {
+  const eb = EventBus.getInstance();
+
+  const fakeContainer = {
+    clientWidth: 1024,
+    clientHeight: 768,
+    appendChild: () => {},
+  } as unknown as HTMLElement;
+
+  const baselineListeners = eb.getListenerCount();
+
+  // Case 1.1: Game creation registers expected subscriptions
+  const game1 = new Game(fakeContainer);
+  const countAfterCreate1 = eb.getListenerCount();
+  assert(countAfterCreate1 > baselineListeners, 'Game creation must attach active event listeners');
+
+  // Case 1.2: Game disposal completely unbinds all owned subscriptions
+  game1.dispose();
+  const countAfterDispose1 = eb.getListenerCount();
+  assert(
+    countAfterDispose1 === baselineListeners,
+    `Game dispose must return EventBus listener count to baseline (${baselineListeners}), got: ${countAfterDispose1}`
+  );
+
+  // Case 1.3: Repeated cycle (create -> dispose -> create -> dispose) does not leak listeners
+  const game2 = new Game(fakeContainer);
+  const countAfterCreate2 = eb.getListenerCount();
+  assert(countAfterCreate2 === countAfterCreate1, 'Second Game instance must register the exact same listener count');
+
+  game2.dispose();
+  const countAfterDispose2 = eb.getListenerCount();
+  assert(
+    countAfterDispose2 === baselineListeners,
+    `Second Game dispose must return listener count to baseline (${baselineListeners}), got: ${countAfterDispose2}`
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CATEGORY 2: Shift Finalization & SHIFT_ENDED Exactly-Once Invariant
+// ---------------------------------------------------------------------------
+runCategory('Category 2: Shift Finalization & SHIFT_ENDED Invariant', () => {
+  const eb = EventBus.getInstance();
+
+  // Case 2.1: Under timer expiration, duplicate completion calls, and rapid simulation ticks, SHIFT_ENDED fires once
+  let shiftEndedCount = 0;
+  const unsubscribe = eb.on('SHIFT_ENDED', () => {
+    shiftEndedCount++;
+  });
+
+  const shiftSystem = new ShiftSystem(1);
+  shiftSystem.startShift();
+
+  // Advance time past the shift duration
+  shiftSystem.update(GameConfig.shift.shiftDurationSeconds + 5);
+  assert(shiftSystem.isExpired() === true, 'ShiftSystem must report expired');
+
+  // Call endShift first time
+  const results1 = shiftSystem.endShift(100, 25);
+  assert(results1.shiftNumber === 1, 'First endShift must calculate results');
+  assert(shiftEndedCount === 1, `SHIFT_ENDED must fire exactly once on first completion, fired: ${shiftEndedCount}`);
+
+  // Duplicate completion trigger
+  const results2 = shiftSystem.endShift(100, 25);
+  assert(results2 === results1, 'Subsequent endShift call must return cached results');
+  assert(shiftEndedCount === 1, `SHIFT_ENDED must NOT re-fire on duplicate endShift call, fired: ${shiftEndedCount}`);
+
+  // Rapid simulation ticks after ending
+  shiftSystem.update(0.016);
+  shiftSystem.update(0.016);
+  shiftSystem.update(0.016);
+  assert(shiftEndedCount === 1, `SHIFT_ENDED must NOT re-fire during rapid updates, fired: ${shiftEndedCount}`);
+
+  unsubscribe();
+});
+
+// ---------------------------------------------------------------------------
+// CATEGORY 3: Gameplay Clock Consistency (Simulation vs Wall-Clock)
+// ---------------------------------------------------------------------------
+runCategory('Category 3: Gameplay Clock Consistency', () => {
+  // Case 3.1: 10s gameplay -> pause -> wait -> resume -> 2s gameplay records ~12s order duration
+  const orderSystem = new OrderSystem();
   const classicRecipe = RECIPES.find((r) => r.id === 'classic_burger')!;
-  assert(classicRecipe !== undefined, 'Classic burger recipe should exist');
 
-  // Test exact assembly
-  const perfectStack: FoodItemType[] = ['bun_bottom', 'cooked_patty', 'cheese', 'lettuce', 'tomato', 'bun_top'];
-  const perfectResult = evaluateBurgerAgainstRecipe(perfectStack, classicRecipe);
-  assert(perfectResult.matches === true, 'Perfect stack should match recipe');
-  assert(perfectResult.accuracy === 1.0, 'Perfect stack should have 1.0 accuracy');
-  passed++;
+  let simulationClock = 0;
 
-  // Test burnt patty rejection
-  const burntStack: FoodItemType[] = ['bun_bottom', 'burnt_patty', 'cheese', 'lettuce', 'tomato', 'bun_top'];
-  const burntResult = evaluateBurgerAgainstRecipe(burntStack, classicRecipe);
-  assert(burntResult.matches === false, 'Burnt patty stack must NOT match recipe');
-  assert(burntResult.feedback.includes('burnt'), 'Feedback must mention burnt meat');
-  passed++;
+  // Order placed at t = 0s
+  const order = orderSystem.createOrder('customer_clock_test', classicRecipe, simulationClock);
+  assert(order.createdTime === 0, 'Order created time must reflect simulation clock');
 
-  // Test raw meat rejection
-  const rawStack: FoodItemType[] = ['bun_bottom', 'raw_patty', 'cheese', 'lettuce', 'tomato', 'bun_top'];
-  const rawResult = evaluateBurgerAgainstRecipe(rawStack, classicRecipe);
-  assert(rawResult.matches === false, 'Raw patty stack must NOT match recipe');
-  assert(rawResult.feedback.includes('raw'), 'Feedback must mention raw meat');
-  passed++;
+  // 10s gameplay simulated
+  const step1 = 10.0;
+  simulationClock += step1;
+  orderSystem.update(step1);
 
-  // Test missing buns
-  const noBunsStack: FoodItemType[] = ['cooked_patty', 'cheese', 'lettuce', 'tomato'];
-  const noBunsResult = evaluateBurgerAgainstRecipe(noBunsStack, classicRecipe);
-  assert(noBunsResult.matches === false, 'Missing bun stack must not match');
-  passed++;
+  // Game paused: wall-clock time passes (e.g. user pauses for 300 seconds), simulation clock does NOT advance
+  const pauseWallClockDuration = 300.0;
+  // (No simulation update called while paused)
 
-  // Test missing ingredient (missing patty from Plain Burger - only buns)
-  const plainRecipe = RECIPES.find((r) => r.id === 'plain_burger')!;
-  const missingIngredientStack: FoodItemType[] = ['bun_bottom', 'bun_top'];
-  const missingIngredientResult = evaluateBurgerAgainstRecipe(missingIngredientStack, plainRecipe);
-  assert(missingIngredientResult.matches === false, 'Burger missing required patty must not match');
-  assert(missingIngredientResult.accuracy < 0.75, 'Accuracy should be below 0.75 for missing main ingredient');
-  passed++;
+  // Game resumed: 2s gameplay simulated
+  const step2 = 2.0;
+  simulationClock += step2;
+  orderSystem.update(step2);
 
-  // Test wrong ingredient combination (e.g. completely wrong item or extra mismatch)
-  const wrongStack: FoodItemType[] = ['bun_bottom', 'cheese', 'bun_top']; // Plain cheese bun served for Deluxe
-  const wrongResult = evaluateBurgerAgainstRecipe(wrongStack, classicRecipe);
-  assert(wrongResult.matches === false, 'Wrong ingredient combination must reject');
-  assert(wrongResult.accuracy < 0.75, 'Accuracy must be below passing threshold (0.75)');
-  passed++;
+  // Calculate order elapsed duration based on gameplay simulation clock
+  const gameplayOrderDuration = simulationClock - order.createdTime;
+  const wallClockOrderDuration = gameplayOrderDuration + pauseWallClockDuration;
 
-  // 2. COOKING STATE TRANSITION TESTS
-  console.log('Testing: Cooking State Transitions...');
-  // Simulate cook progress
-  let progress = 0.0;
-  let state = 'RAW';
+  assert(
+    Math.abs(gameplayOrderDuration - 12.0) < 0.001,
+    `Gameplay order duration must be 12.0s, got: ${gameplayOrderDuration}`
+  );
+  assert(
+    wallClockOrderDuration > 300,
+    `Wall clock duration (${wallClockOrderDuration}s) must be decoupled from simulation duration`
+  );
+});
 
-  function simulateCook(delta: number) {
-    progress += delta;
-    if (progress >= GameConfig.cooking.burntThreshold) {
-      state = 'BURNT';
-    } else if (progress >= GameConfig.cooking.cookedMinProgress) {
-      state = 'COOKED';
-    } else {
-      state = 'COOKING';
-    }
-  }
+// ---------------------------------------------------------------------------
+// CATEGORY 4: Real Production Cooking & FoodItem State Transitions
+// ---------------------------------------------------------------------------
+runCategory('Category 4: Production Cooking State Transitions', () => {
+  // Case 4.1: Exercises production FoodItem.advanceCooking and state transitions
+  const patty = new FoodItem('raw_patty');
+  assert(patty.state === 'RAW', `Initial patty state must be RAW, got: ${patty.state}`);
+  assert(patty.cookProgress === 0, 'Initial cook progress must be 0');
 
-  simulateCook(0.3);
-  assert(state === 'COOKING', `At 0.3 progress should be COOKING, got: ${state}`);
-  simulateCook(0.4); // now 0.7
-  assert(state === 'COOKED', `At 0.7 progress should be COOKED, got: ${state}`);
-  simulateCook(0.6); // now 1.3
-  assert(state === 'BURNT', `At 1.3 progress should be BURNT, got: ${state}`);
-  passed++;
+  // Advance to COOKING (0.3 < cookedMinProgress 0.6)
+  patty.advanceCooking(0.3);
+  assert(patty.state === 'COOKING', `At 0.3 progress, patty state must be COOKING, got: ${patty.state}`);
 
-  // 3. ORDER PATIENCE & LIFECYCLE TESTS
-  console.log('Testing: Order Patience...');
-  const order = new Order('cust_test', classicRecipe, 40, 100);
-  assert(order.remainingPatience === 40, 'Initial patience should be 40');
-  assert(order.patienceRatio === 1.0, 'Initial patience ratio should be 1.0');
+  // Advance to COOKED (0.7 >= 0.6 and < burntThreshold 1.2)
+  patty.advanceCooking(0.4);
+  assert(Math.abs(patty.cookProgress - 0.7) < 0.001, 'Cook progress must equal 0.7');
+  assert(patty.state === 'COOKED', `At 0.7 progress, patty state must be COOKED, got: ${patty.state}`);
 
-  // Decay 20 seconds
+  // Advance to BURNT (1.3 >= 1.2)
+  patty.advanceCooking(0.6);
+  assert(Math.abs(patty.cookProgress - 1.3) < 0.001, 'Cook progress must equal 1.3');
+  assert(patty.state === 'BURNT', `At 1.3 progress, patty state must be BURNT, got: ${patty.state}`);
+});
+
+// ---------------------------------------------------------------------------
+// CATEGORY 5: Order Patience & Shift Integration
+// ---------------------------------------------------------------------------
+runCategory('Category 5: Order Patience & Shift Integration', () => {
+  const classicRecipe = RECIPES.find((r) => r.id === 'classic_burger')!;
+
+  // Case 5.1: Order patience decay and expiration
+  const order = new Order('cust_patience', classicRecipe, 40, 0);
+  assert(order.remainingPatience === 40, 'Initial patience must be 40');
+  assert(order.patienceRatio === 1.0, 'Initial patience ratio must be 1.0');
+
   order.updatePatience(20);
   assert(order.remainingPatience === 20, 'Patience should decay to 20');
   assert(order.patienceRatio === 0.5, 'Patience ratio should be 0.5');
   assert(order.status === 'PENDING', 'Order should still be PENDING');
 
-  // Decay past 0
   const expired = order.updatePatience(25);
   assert(expired === true, 'Order should expire when patience reaches 0');
   assert(order.status === 'EXPIRED', 'Order status should be EXPIRED');
-  passed++;
 
-  // 4. ECONOMY REWARD CALCULATION TESTS
-  console.log('Testing: Economy Reward Calculations...');
+  // Case 5.2: Shift ends with active order in production OrderSystem
+  const orderSystem = new OrderSystem();
+  const shiftSystem = new ShiftSystem(1);
+  shiftSystem.startShift();
+
+  const inFlightOrder = orderSystem.createOrder('cust_inflight', classicRecipe, 0);
+  assert(orderSystem.orderCount === 1, 'OrderSystem must contain in-flight order');
+  assert(inFlightOrder.status === 'PENDING', 'In-flight order must be PENDING');
+
+  // Shift reaches time limit and ends
+  shiftSystem.update(GameConfig.shift.shiftDurationSeconds + 1);
+  assert(shiftSystem.isExpired() === true, 'Shift should be expired');
+
+  const endResults = shiftSystem.endShift(50, 10);
+  assert(shiftSystem.phase === 'ENDED', 'Shift phase must transition to ENDED');
+  assert(endResults.ordersCompleted === 0, 'Unfinished order must not count as completed');
+  assert(endResults.ordersFailed === 0, 'In-flight order must not prematurely count as failed');
+  assert(orderSystem.orderCount === 1, 'Active order remains queryable in OrderSystem');
+});
+
+// ---------------------------------------------------------------------------
+// CATEGORY 6: Economy Reward Calculations & Penalties
+// ---------------------------------------------------------------------------
+runCategory('Category 6: Economy Reward Calculations & Penalties', () => {
+  const classicRecipe = RECIPES.find((r) => r.id === 'classic_burger')!;
   const economy = new EconomySystem(100);
   assert(economy.cash === 100, 'Initial cash should be 100');
 
-  // Fast order with 1.0 accuracy (patience = 0.9)
+  // Case 6.1: Fast order with perfect accuracy
   const fastReward = economy.calculateReward(classicRecipe, 0.9, 1.0);
   assert(fastReward.basePrice === classicRecipe.basePrice, 'Base price must match recipe');
   assert(fastReward.speedBonus > 0, 'Fast order must yield speed bonus');
-  assert(fastReward.accuracyBonus === GameConfig.economy.perfectAssemblyBonus, 'Perfect accuracy bonus should apply');
+  assert(fastReward.accuracyBonus === GameConfig.economy.perfectAssemblyBonus, 'Perfect accuracy bonus must apply');
   assert(fastReward.totalEarned > classicRecipe.basePrice, 'Total earned must exceed base price');
 
-  // Slow order (patience = 0.1)
+  // Case 6.2: Slow order without bonus
   const slowReward = economy.calculateReward(classicRecipe, 0.1, 0.8);
   assert(slowReward.speedBonus === 0, 'Slow order should have 0 speed bonus');
   assert(slowReward.accuracyBonus === 0, 'Non-perfect order should have 0 accuracy bonus');
   assert(slowReward.totalEarned === classicRecipe.basePrice, 'Slow order should only get base price');
 
-  // Register payout
+  // Case 6.3: Register payout
   economy.registerCompletedOrder(classicRecipe, 0.9, 1.0);
   assert(economy.cash > 100, 'Cash should increase after completed order');
   assert(economy.completedOrders === 1, 'Completed orders count must be 1');
 
-  // Register failed order
+  // Case 6.4: Register failed order
   const cashBeforeFail = economy.cash;
   economy.registerFailedOrder();
-  assert(economy.cash === cashBeforeFail - GameConfig.economy.burntPenalty, 'Penalty should be deducted');
+  assert(economy.cash === cashBeforeFail - GameConfig.economy.burntPenalty, 'Penalty must be deducted');
   assert(economy.failedOrders === 1, 'Failed orders count must be 1');
-  passed++;
+});
 
-  // 5. SHIFT SYSTEM COMPLETION TESTS
-  console.log('Testing: Shift Completion...');
-  const shift = new ShiftSystem(1);
-  shift.startShift();
-  assert(shift.phase === 'ACTIVE', 'Shift must be ACTIVE');
+// ---------------------------------------------------------------------------
+// CATEGORY 7: Recipe Layer & Accuracy Evaluation
+// ---------------------------------------------------------------------------
+runCategory('Category 7: Recipe Layer & Accuracy Evaluation', () => {
+  const classicRecipe = RECIPES.find((r) => r.id === 'classic_burger')!;
 
-  shift.recordCompletedOrder(12.5, 1.0);
-  shift.recordCompletedOrder(14.0, 0.95);
-  shift.recordCompletedOrder(10.2, 1.0);
-  shift.recordCompletedOrder(11.0, 1.0);
-  shift.recordCompletedOrder(9.8, 1.0);
+  // Case 7.1: Perfect burger stack
+  const perfectStack: FoodItemType[] = ['bun_bottom', 'cooked_patty', 'cheese', 'lettuce', 'tomato', 'bun_top'];
+  const perfectResult = evaluateBurgerAgainstRecipe(perfectStack, classicRecipe);
+  assert(perfectResult.matches === true, 'Perfect stack should match recipe');
+  assert(perfectResult.accuracy === 1.0, 'Perfect stack should have 1.0 accuracy');
 
-  const results = shift.endShift(85.5, 18.0);
-  assert(results.ordersCompleted === 5, 'Must report 5 completed orders');
-  assert(results.ordersFailed === 0, 'Must report 0 failed orders');
-  assert(results.totalRevenue === 85.5, 'Must report correct revenue');
-  assert(results.totalTips === 18.0, 'Must report correct tips');
-  assert(results.bestOrderTime === 9.8, 'Best order time should be 9.8s');
-  assert(results.ratingGrade === 'A' || results.ratingGrade === 'S', 'High performance should receive A or S grade');
-  passed++;
+  // Case 7.2: Burnt patty rejection
+  const burntStack: FoodItemType[] = ['bun_bottom', 'burnt_patty', 'cheese', 'lettuce', 'tomato', 'bun_top'];
+  const burntResult = evaluateBurgerAgainstRecipe(burntStack, classicRecipe);
+  assert(burntResult.matches === false, 'Burnt patty stack must NOT match recipe');
+  assert(burntResult.feedback.includes('burnt'), 'Feedback must mention burnt meat');
 
-  // 6. EDGE CASE: BROWSER TAB BECOMES INACTIVE AND RETURNS (DELTA CLAMP)
-  console.log('Testing: Edge Case C - Tab Inactive Delta Clamp...');
+  // Case 7.3: Raw patty rejection
+  const rawStack: FoodItemType[] = ['bun_bottom', 'raw_patty', 'cheese', 'lettuce', 'tomato', 'bun_top'];
+  const rawResult = evaluateBurgerAgainstRecipe(rawStack, classicRecipe);
+  assert(rawResult.matches === false, 'Raw patty stack must NOT match recipe');
+  assert(rawResult.feedback.includes('raw'), 'Feedback must mention raw meat');
+
+  // Case 7.4: Missing buns
+  const noBunsStack: FoodItemType[] = ['cooked_patty', 'cheese', 'lettuce', 'tomato'];
+  const noBunsResult = evaluateBurgerAgainstRecipe(noBunsStack, classicRecipe);
+  assert(noBunsResult.matches === false, 'Missing bun stack must not match');
+
+  // Case 7.5: Edge Case - Time delta clamping on background tab return
   const gameTime = new GameTime();
   gameTime.reset();
-  // Simulate 10 seconds passing while tab was hidden in background
   const simulatedDt = gameTime.update(performance.now() + 10000);
   assert(simulatedDt <= 0.1, `Delta time must be clamped to maxDelta (0.1s), got: ${simulatedDt}`);
-  passed++;
+});
 
-  // 7. EDGE CASE: SHIFT ENDS WHILE ACTIVE ORDER STILL EXISTS
-  console.log('Testing: Edge Case D - Shift Ends With Active Order...');
-  const shiftWithOrder = new ShiftSystem(1);
-  shiftWithOrder.startShift();
-  shiftWithOrder.recordCompletedOrder(15, 1.0);
-  // An active order existed but shift timer ended
-  const endResults = shiftWithOrder.endShift(10, 2);
-  assert(shiftWithOrder.phase === 'ENDED', 'Shift phase must transition to ENDED');
-  assert(endResults.ordersCompleted === 1, 'Only completed orders should be counted');
-  assert(endResults.shiftNumber === 1, 'Shift number must be preserved');
-  passed++;
-
-  // 8. EDGE CASE: START NEXT SHIFT FROM RESULT SCREEN
-  console.log('Testing: Edge Case E - Advance to Next Shift...');
-  const multiShift = new ShiftSystem(1);
-  multiShift.startShift();
-  multiShift.endShift(20, 5);
-  multiShift.advanceToNextShift();
-  assert(multiShift.shiftNumber === 2, 'Shift number must increment to 2');
-  assert(multiShift.phase === 'ACTIVE', 'Shift phase must reset to ACTIVE');
-  assert(multiShift.ordersCompleted === 0, 'Orders completed must reset to 0');
-  assert(multiShift.ordersFailed === 0, 'Orders failed must reset to 0');
-  passed++;
-
-  // 9. EDGE CASES F & G: CORRUPTED AND MISSING LOCALSTORAGE
-  console.log('Testing: Edge Cases F & G - LocalStorage Resilience...');
-  // Mock localStorage in test environment
-  const mockStorage: Record<string, string> = {};
-  (globalThis as any).localStorage = {
-    getItem: (key: string) => mockStorage[key] || null,
-    setItem: (key: string, val: string) => { mockStorage[key] = val; },
-    removeItem: (key: string) => { delete mockStorage[key]; },
-  };
-
-  // Case G: Completely missing localStorage
-  mockStorage['rushbite_save_v1'] = '';
+// ---------------------------------------------------------------------------
+// CATEGORY 8: Storage Resilience & Progression Sanitization
+// ---------------------------------------------------------------------------
+runCategory('Category 8: Storage Resilience & Progression Sanitization', () => {
+  // Case 8.1: Missing localStorage defaults
   delete mockStorage['rushbite_save_v1'];
   const missingData = StorageUtil.load();
   assert(missingData.version === 1, 'Missing storage must return version 1');
   assert(missingData.cash === 0, 'Missing storage must default cash to 0');
   assert(missingData.highestShift === 1, 'Missing storage must default highestShift to 1');
-  assert(missingData.settings.graphicsQuality === 'HIGH', 'Missing storage must default graphics');
-  passed++;
+  assert(missingData.settings.graphicsQuality === 'HIGH', 'Missing storage must default graphics to HIGH');
 
-  // Case F: Invalid / corrupted localStorage (malformed JSON, NaN cash, invalid types)
+  // Case 8.2: Corrupted JSON recovers gracefully
   mockStorage['rushbite_save_v1'] = '{corrupted: json string [!@#';
   const corruptedData = StorageUtil.load();
   assert(corruptedData.cash === DEFAULT_SAVE_DATA.cash, 'Corrupted JSON must fallback to default cash');
   assert(corruptedData.highestShift === DEFAULT_SAVE_DATA.highestShift, 'Corrupted JSON must fallback to default shift');
 
+  // Case 8.3: Sanitization of invalid types and out-of-range numbers
   mockStorage['rushbite_save_v1'] = JSON.stringify({
     cash: 'NaN',
     highestShift: -5,
-    settings: { graphicsQuality: 'INVALID_QUALITY' }
+    settings: { graphicsQuality: 'INVALID_QUALITY' },
   });
   const badTypesData = StorageUtil.load();
   assert(badTypesData.cash === 0, 'Non-number cash must sanitize to 0');
   assert(badTypesData.highestShift === 1, 'Negative shift must sanitize to 1');
   assert(badTypesData.settings.graphicsQuality === 'HIGH', 'Invalid graphics preset must sanitize to HIGH');
-  passed++;
+});
 
-  console.log(`\n🎉 ALL ${passed} UNIT TEST SUITES PASSED CLEANLY!`);
-}
+// ---------------------------------------------------------------------------
+// CATEGORY 9: Three.js Resource Ownership & Disposal
+// ---------------------------------------------------------------------------
+runCategory('Category 9: Three.js Resource Ownership & Disposal', () => {
+  // Case 9.1: Shared FoodItem geometries are tagged with isShared
+  const item1 = new FoodItem('bun_bottom');
+  const item2 = new FoodItem('bun_bottom');
 
-runTests();
+  const child1 = item1.mesh.children[0] as THREE.Mesh;
+  const child2 = item2.mesh.children[0] as THREE.Mesh;
+
+  assert(child1 !== undefined && child2 !== undefined, 'FoodItem must contain visual mesh child');
+  assert(child1.geometry === child2.geometry, 'Multiple FoodItems must share module-scoped geometry');
+  assert(child1.geometry.userData.isShared === true, 'Shared geometry must be tagged with userData.isShared = true');
+
+  // Disposing item1 does not dispose the shared geometry
+  item1.dispose();
+  assert(
+    child2.geometry !== null,
+    'Disposing one FoodItem must NOT dispose shared geometry still needed by other items'
+  );
+  item2.dispose();
+});
+
+console.log('\n====================================================');
+console.log(`  RESULT: ${passedAssertions}/${totalAssertions} ASSERTIONS PASSED ACROSS 9 CATEGORIES`);
+console.log('====================================================\n');

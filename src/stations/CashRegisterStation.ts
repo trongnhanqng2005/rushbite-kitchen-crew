@@ -9,6 +9,7 @@ import { FoodItem } from '../entities/FoodItem.ts';
 import { Customer } from '../entities/Customer.ts';
 import { EventBus } from '../core/EventBus.ts';
 import { SoundManager } from '../audio/SoundManager.ts';
+import { disposeObject3D } from '../utils/disposeThree.ts';
 
 export class CashRegisterStation implements Interactable {
   public mesh: THREE.Group;
@@ -123,5 +124,10 @@ export class CashRegisterStation implements Interactable {
     }
 
     return 'Service Counter';
+  }
+
+  public dispose(): void {
+    this.activeCustomer = null;
+    disposeObject3D(this.mesh);
   }
 }

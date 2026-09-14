@@ -69,23 +69,44 @@ export class GrillStation extends CookingStation {
   }
 
   public get activePattyCount(): number {
-    return this.slots.filter((s) => s.item !== null).length;
+    let count = 0;
+    for (let i = 0; i < this.slots.length; i++) {
+      if (this.slots[i].item !== null) count++;
+    }
+    return count;
   }
 
   public get cookingPatties(): FoodItem[] {
-    return this.slots.filter((s) => s.item !== null).map((s) => s.item!);
+    const list: FoodItem[] = [];
+    for (let i = 0; i < this.slots.length; i++) {
+      const item = this.slots[i].item;
+      if (item !== null) list.push(item);
+    }
+    return list;
+  }
+
+  public forEachCookingPatty(fn: (item: FoodItem) => void): void {
+    for (let i = 0; i < this.slots.length; i++) {
+      const item = this.slots[i].item;
+      if (item !== null) fn(item);
+    }
   }
 
   public canInteract(heldItem: FoodItem | null): boolean {
     if (heldItem) {
       // Can place raw or cooked patty onto grill if slot available
       if (heldItem.type === 'raw_patty' || heldItem.type === 'cooked_patty') {
-        return this.slots.some((s) => s.item === null);
+        for (let i = 0; i < this.slots.length; i++) {
+          if (this.slots[i].item === null) return true;
+        }
       }
       return false;
     }
     // Can pick up if any slot has an item
-    return this.slots.some((s) => s.item !== null);
+    for (let i = 0; i < this.slots.length; i++) {
+      if (this.slots[i].item !== null) return true;
+    }
+    return false;
   }
 
   public interact(heldItem: FoodItem | null): FoodItem | null {
@@ -105,15 +126,25 @@ export class GrillStation extends CookingStation {
       return heldItem;
     }
 
-    // Pick up: prioritize cooked patties first, then burnt, then raw
-    const occupied = this.slots.filter((s) => s.item !== null);
-    if (occupied.length === 0) return null;
+    // Pick up: prioritize cooked patties first, then burnt, then raw without temporary arrays
+    let targetSlot: GrillSlot | null = null;
+    let fallbackSlot: GrillSlot | null = null;
+    for (let i = 0; i < this.slots.length; i++) {
+      const slot = this.slots[i];
+      if (slot.item) {
+        if (!fallbackSlot) fallbackSlot = slot;
+        if (slot.item.state === 'COOKED') {
+          targetSlot = slot;
+          break;
+        } else if (slot.item.state === 'BURNT' && (!targetSlot || targetSlot.item?.state !== 'COOKED')) {
+          targetSlot = slot;
+        }
+      }
+    }
+    if (!targetSlot) targetSlot = fallbackSlot;
+    if (!targetSlot || !targetSlot.item) return null;
 
-    let targetSlot = occupied.find((s) => s.item?.state === 'COOKED');
-    if (!targetSlot) targetSlot = occupied.find((s) => s.item?.state === 'BURNT');
-    if (!targetSlot) targetSlot = occupied[0];
-
-    const item = targetSlot.item!;
+    const item = targetSlot.item;
     targetSlot.item = null;
     this.mesh.remove(item.mesh);
 
@@ -134,6 +165,11 @@ export class GrillStation extends CookingStation {
       }
     }
     this.soundManager.stopGrillSizzle();
+  }
+
+  public override dispose(): void {
+    this.clear();
+    super.dispose();
   }
 
   public getInteractionLabel(heldItem: FoodItem | null): string {

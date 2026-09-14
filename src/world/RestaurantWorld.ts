@@ -9,6 +9,7 @@ import { CollisionWorld } from './CollisionWorld.ts';
 import { GrillStation } from '../stations/GrillStation.ts';
 import { AssemblyStation } from '../stations/AssemblyStation.ts';
 import { CashRegisterStation } from '../stations/CashRegisterStation.ts';
+import { disposeObject3D } from '../utils/disposeThree.ts';
 import { IngredientCrateStation } from '../stations/IngredientCrateStation.ts';
 import { TrashStation } from '../stations/TrashStation.ts';
 
@@ -280,5 +281,17 @@ export class RestaurantWorld {
     this.cashRegisterStation = new CashRegisterStation(registerPos);
     this.scene.add(this.cashRegisterStation.mesh);
     this.collisionWorld.addBoxFromCenterSize(new THREE.Vector3(registerPos.x, 0.45, registerPos.z), new THREE.Vector3(1.7, 0.95, 1.0), 'RegisterStation');
+  }
+
+  public dispose(): void {
+    if (this.grillStation) this.grillStation.dispose();
+    if (this.assemblyStation) this.assemblyStation.dispose();
+    if (this.trashStation) this.trashStation.dispose();
+    if (this.cashRegisterStation) this.cashRegisterStation.dispose();
+    for (let i = 0; i < this.crateStations.length; i++) {
+      this.crateStations[i].dispose();
+    }
+    this.crateStations = [];
+    disposeObject3D(this.scene);
   }
 }

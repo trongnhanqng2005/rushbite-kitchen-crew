@@ -17,13 +17,10 @@ export class CookingSystem {
   }
 
   public update(dt: number): void {
-    const patties = this.grillStation.cookingPatties;
-    if (patties.length === 0) return;
-
     const baseRate = GameConfig.cooking.baseCookRate * this.cookSpeedMultiplier;
     const progressDelta = baseRate * dt;
 
-    patties.forEach((patty) => {
+    this.grillStation.forEachCookingPatty((patty) => {
       const prevState = patty.state;
       patty.advanceCooking(progressDelta);
 

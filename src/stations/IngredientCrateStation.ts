@@ -7,6 +7,7 @@ import { Interactable } from '../systems/InteractionSystem.ts';
 import { FoodItem } from '../entities/FoodItem.ts';
 import { FoodItemType, INGREDIENT_DEFINITIONS } from '../data/ingredients.ts';
 import { SoundManager } from '../audio/SoundManager.ts';
+import { disposeObject3D } from '../utils/disposeThree.ts';
 
 export class IngredientCrateStation implements Interactable {
   public mesh: THREE.Group;
@@ -96,5 +97,9 @@ export class IngredientCrateStation implements Interactable {
       return `Hands full (${INGREDIENT_DEFINITIONS[heldItem.type]?.name || 'Item'})`;
     }
     return `[E] Take ${def.name}`;
+  }
+
+  public dispose(): void {
+    disposeObject3D(this.mesh);
   }
 }

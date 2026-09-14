@@ -89,8 +89,8 @@ export const HUD: React.FC<HUDProps> = ({ state, isPointerLocked, onRequestPoint
                         key={i}
                         className="bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded border border-neutral-700/60"
                       >
-                        {INGREDIENT_DEFINITIONS[ing as any]?.iconText || '•'}{' '}
-                        {INGREDIENT_DEFINITIONS[ing as any]?.name || ing}
+                        {INGREDIENT_DEFINITIONS[ing]?.iconText || '•'}{' '}
+                        {INGREDIENT_DEFINITIONS[ing]?.name || ing}
                       </span>
                     ))}
                   </div>

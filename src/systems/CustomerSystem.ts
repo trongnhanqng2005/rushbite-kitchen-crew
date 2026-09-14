@@ -24,22 +24,25 @@ export class CustomerSystem {
 
   public customerPatienceMultiplier: number = 1.0;
   public spawnRateMultiplier: number = 1.0;
+  private currentSimulationTime: number = 0;
+  private unsubOrderTaken: (() => void) | null = null;
 
   constructor(world: RestaurantWorld, orderSystem: OrderSystem) {
     this.world = world;
     this.orderSystem = orderSystem;
 
     // Listen to order taken event from register
-    this.eventBus.on('ORDER_TAKEN', ({ customer }: { customer: Customer }) => {
+    this.unsubOrderTaken = this.eventBus.on('ORDER_TAKEN', ({ customer }: { customer: Customer }) => {
       if (customer.state === 'WAITING_TO_ORDER' && customer.desiredRecipe) {
         customer.state = 'WAITING_FOR_FOOD';
         customer.updateMoodIcon('⏳');
-        customer.order = this.orderSystem.createOrder(customer.id, customer.desiredRecipe, performance.now() * 0.001);
+        customer.order = this.orderSystem.createOrder(customer.id, customer.desiredRecipe, this.currentSimulationTime);
       }
     });
   }
 
   public update(dt: number, currentTime: number): void {
+    this.currentSimulationTime = currentTime;
     // 1. Spawning Logic
     this.updateSpawning(dt);
 
@@ -193,5 +196,13 @@ export class CustomerSystem {
     }
     this.customers = [];
     this.world.cashRegisterStation.activeCustomer = null;
+  }
+
+  public dispose(): void {
+    this.clear();
+    if (this.unsubOrderTaken) {
+      this.unsubOrderTaken();
+      this.unsubOrderTaken = null;
+    }
   }
 }

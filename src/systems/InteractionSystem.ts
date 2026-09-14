@@ -12,7 +12,7 @@ export interface Interactable {
   getInteractionLabel(heldItem: FoodItem | null): string;
   getInteractionPosition(): THREE.Vector3;
   secondaryInteract?(heldItem: FoodItem | null): FoodItem | null;
-  getSecondaryLabel?(heldItem: FoodItem | null): string;
+  getSecondaryLabel?(heldItem: FoodItem | null): string | undefined;
 }
 
 export interface InteractionPrompt {
@@ -31,6 +31,14 @@ export class InteractionSystem {
   // Reusable vectors to prevent GC allocations
   private tempOrigin: THREE.Vector3 = new THREE.Vector3();
   private tempTarget: THREE.Vector3 = new THREE.Vector3();
+
+  // Cached prompt to eliminate per-frame object allocations
+  private cachedPrompt: InteractionPrompt = {
+    hasTarget: false,
+    label: '',
+    secondaryLabel: undefined,
+    distance: 0,
+  };
 
   public registerInteractable(obj: Interactable): void {
     if (!this.interactables.includes(obj)) {
@@ -79,19 +87,18 @@ export class InteractionSystem {
     this.currentTarget = bestInteractable;
 
     if (this.currentTarget) {
-      return {
-        hasTarget: true,
-        label: this.currentTarget.getInteractionLabel(heldItem),
-        secondaryLabel: this.currentTarget.getSecondaryLabel ? this.currentTarget.getSecondaryLabel(heldItem) : undefined,
-        distance: closestDist,
-      };
+      this.cachedPrompt.hasTarget = true;
+      this.cachedPrompt.label = this.currentTarget.getInteractionLabel(heldItem);
+      this.cachedPrompt.secondaryLabel = this.currentTarget.getSecondaryLabel ? this.currentTarget.getSecondaryLabel(heldItem) : undefined;
+      this.cachedPrompt.distance = closestDist;
+      return this.cachedPrompt;
     }
 
-    return {
-      hasTarget: false,
-      label: '',
-      distance: 0,
-    };
+    this.cachedPrompt.hasTarget = false;
+    this.cachedPrompt.label = '';
+    this.cachedPrompt.secondaryLabel = undefined;
+    this.cachedPrompt.distance = 0;
+    return this.cachedPrompt;
   }
 
   public triggerInteract(heldItem: FoodItem | null): FoodItem | null {

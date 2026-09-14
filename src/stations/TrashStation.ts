@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { Interactable } from '../systems/InteractionSystem.ts';
 import { FoodItem } from '../entities/FoodItem.ts';
 import { SoundManager } from '../audio/SoundManager.ts';
+import { disposeObject3D } from '../utils/disposeThree.ts';
 
 export class TrashStation implements Interactable {
   public mesh: THREE.Group;
@@ -60,5 +61,9 @@ export class TrashStation implements Interactable {
       return `[E] Throw Away ${heldItem.type === 'assembled_burger' ? 'Burger' : 'Item'}`;
     }
     return 'Trash Bin (Empty Hands)';
+  }
+
+  public dispose(): void {
+    disposeObject3D(this.mesh);
   }
 }

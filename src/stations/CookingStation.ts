@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { Interactable } from '../systems/InteractionSystem.ts';
 import { FoodItem } from '../entities/FoodItem.ts';
+import { disposeObject3D } from '../utils/disposeThree.ts';
 
 export abstract class CookingStation implements Interactable {
   public mesh: THREE.Group;
@@ -23,4 +24,8 @@ export abstract class CookingStation implements Interactable {
   public abstract canInteract(heldItem: FoodItem | null): boolean;
   public abstract interact(heldItem: FoodItem | null): FoodItem | null;
   public abstract getInteractionLabel(heldItem: FoodItem | null): string;
+
+  public dispose(): void {
+    disposeObject3D(this.mesh);
+  }
 }

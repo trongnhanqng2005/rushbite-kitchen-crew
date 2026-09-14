@@ -7,6 +7,7 @@ import { Interactable } from '../systems/InteractionSystem.ts';
 import { FoodItem } from '../entities/FoodItem.ts';
 import { FoodItemType, INGREDIENT_DEFINITIONS } from '../data/ingredients.ts';
 import { SoundManager } from '../audio/SoundManager.ts';
+import { disposeObject3D } from '../utils/disposeThree.ts';
 
 export class AssemblyStation implements Interactable {
   public mesh: THREE.Group;
@@ -97,6 +98,11 @@ export class AssemblyStation implements Interactable {
   public clear(): void {
     this.currentStack = [];
     this.rebuildStackVisuals();
+  }
+
+  public dispose(): void {
+    this.clear();
+    disposeObject3D(this.mesh);
   }
 
   public getSecondaryLabel(_heldItem: FoodItem | null): string | undefined {

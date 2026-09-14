@@ -3,6 +3,7 @@
  */
 
 import { Recipe } from '../data/recipes.ts';
+import { FoodItemType } from '../data/ingredients.ts';
 
 export type OrderStatus = 'PENDING' | 'PREPARING' | 'COMPLETED' | 'EXPIRED' | 'WRONG';
 
@@ -12,7 +13,7 @@ export interface OrderSnapshot {
   recipeId: string;
   recipeName: string;
   recipeIcon: string;
-  requiredIngredients: string[];
+  requiredIngredients: FoodItemType[];
   basePrice: number;
   remainingPatience: number;
   maxPatience: number;
